@@ -34,6 +34,10 @@ exports.updateTrainingDetails = async (req, res) => {
     }
 
     await training.save();
+
+    // Link reference to User
+    await User.findByIdAndUpdate(studentId, { trainingDetails: training._id });
+
     res.json(training);
   } catch (error) {
     console.error('Error updating training details:', error);
@@ -128,9 +132,27 @@ exports.getProgressSummary = async (req, res) => {
     const studentId = req.user._id;
     
     // Get user with populated training details
-    const user = await User.findById(studentId).populate('trainingDetails');
+    let user = await User.findById(studentId).populate('trainingDetails');
+    
+    // Legacy-record fallback self-healing logic
     if (!user.trainingDetails) {
-      return res.status(404).json({ message: 'Training details not found' });
+      const legacyTraining = await TrainingDetails.findOne({ student: studentId });
+      if (legacyTraining) {
+        user.trainingDetails = legacyTraining._id;
+        await user.save();
+        user = await User.findById(studentId).populate('trainingDetails');
+      } else {
+        return res.status(404).json({ message: 'Training details not found' });
+      }
+    }
+
+    // Dynamic completed hours recalculation from authoritative DailyLog records
+    const allLogs = await DailyLog.find({ student: studentId });
+    const computedHours = allLogs.reduce((sum, log) => sum + log.totalHours, 0);
+    
+    if (user.trainingDetails.completedHours !== computedHours) {
+      user.trainingDetails.completedHours = Math.max(0, computedHours);
+      await TrainingDetails.findByIdAndUpdate(user.trainingDetails._id, { completedHours: user.trainingDetails.completedHours });
     }
 
     // Get recent daily logs

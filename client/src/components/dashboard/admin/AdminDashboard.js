@@ -1,8 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getAllStudents } from '../../../services/adminService';
 import { FaUsers, FaBuilding, FaClipboardList } from 'react-icons/fa';
+import { logout } from '../../../services/authService';
 
 function AdminDashboard() {
+  const handleLogout = () => {
+    logout();
+    window.location.href = '/';
+  };
+
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -195,9 +201,17 @@ function AdminDashboard() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 mb-8 text-white shadow-lg">
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-        <p className="text-sm opacity-90 mt-1">Overview of students and training progress</p>
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 mb-8 text-white shadow-lg flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <p className="text-sm opacity-90 mt-1">Overview of students and training progress</p>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition font-medium border border-white/10"
+        >
+          Logout
+        </button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -479,13 +493,38 @@ function AdminDashboard() {
                 <div className="text-sm text-gray-700">
                   {drawerStudent.dailyLogs && drawerStudent.dailyLogs.length > 0 ? (
                     (() => {
-                      const latest = [...drawerStudent.dailyLogs].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+                      let latest = null;
+                      try {
+                        latest = [...drawerStudent.dailyLogs].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+                      } catch (e) {
+                        console.error('Error sorting daily logs:', e);
+                      }
+                      
+                      if (!latest) return <div>No logs available</div>;
+
+                      // Safe extraction of tasks, hours, and notes
+                      const tasksArray = Array.isArray(latest.tasks) ? latest.tasks : [];
+                      const totalHoursVal = latest.totalHours !== undefined ? latest.totalHours : (latest.hours || 'N/A');
+
                       return (
-                        <div>
-                          <div>Date: {latest.date ? new Date(latest.date).toLocaleDateString() : 'N/A'}</div>
-                          <div>Hours: {latest.hours || 'N/A'}</div>
-                          <div>Tasks: {latest.tasks || 'N/A'}</div>
-                          <div>Notes: {latest.notes || 'N/A'}</div>
+                        <div className="space-y-2">
+                          <div><strong>Date:</strong> {latest.date ? new Date(latest.date).toLocaleDateString() : 'N/A'}</div>
+                          <div><strong>Total Hours:</strong> {totalHoursVal}</div>
+                          <div>
+                            <strong>Tasks:</strong>
+                            {tasksArray.length > 0 ? (
+                              <ul className="list-disc list-inside mt-1 space-y-1">
+                                {tasksArray.map((t, idx) => (
+                                  <li key={idx} className="text-xs text-gray-600">
+                                    {t.description || 'No description'} {t.hours !== undefined ? `(${t.hours} hrs)` : ''}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <span className="text-gray-500 text-xs ml-1">None logged</span>
+                            )}
+                          </div>
+                          <div><strong>Notes:</strong> {latest.notes || 'N/A'}</div>
                         </div>
                       );
                     })()

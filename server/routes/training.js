@@ -16,4 +16,10 @@ router.get('/details/:studentId?',
   trainingController.getTrainingDetails
 );
 
+router.get('/progress',
+  verifyToken,
+  isStudent,
+  trainingController.getProgressSummary
+);
+
 module.exports = router; 

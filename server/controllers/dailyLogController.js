@@ -1,6 +1,17 @@
 const DailyLog = require('../models/DailyLog');
 const TrainingDetails = require('../models/TrainingDetails');
 
+// Helper function to recalculate and update completed hours
+const recalculateCompletedHours = async (studentId) => {
+  const logs = await DailyLog.find({ student: studentId });
+  const completedHours = logs.reduce((sum, log) => sum + log.totalHours, 0);
+  
+  await TrainingDetails.findOneAndUpdate(
+    { student: studentId },
+    { completedHours: Math.max(0, completedHours) }
+  );
+};
+
 // Create a new daily log
 const createDailyLog = async (req, res) => {
   try {
@@ -36,12 +47,8 @@ const createDailyLog = async (req, res) => {
 
     await dailyLog.save();
 
-    // Update training details with completed hours
-    const trainingDetails = await TrainingDetails.findOne({ student: studentId });
-    if (trainingDetails) {
-      trainingDetails.completedHours += totalHours;
-      await trainingDetails.save();
-    }
+    // Recalculate completed hours dynamically to ensure data integrity
+    await recalculateCompletedHours(studentId);
 
     res.status(201).json(dailyLog);
   } catch (error) {
@@ -126,18 +133,13 @@ const updateDailyLog = async (req, res) => {
       });
     }
 
-    // Update training details with the difference in hours
-    const trainingDetails = await TrainingDetails.findOne({ student: studentId });
-    if (trainingDetails) {
-      const hoursDiff = totalHours - log.totalHours;
-      trainingDetails.completedHours += hoursDiff;
-      await trainingDetails.save();
-    }
-
     // Update the log
     log.totalHours = totalHours;
     log.tasks = tasks;
     await log.save();
+
+    // Recalculate completed hours dynamically to ensure data integrity
+    await recalculateCompletedHours(studentId);
 
     res.json(log);
   } catch (error) {
@@ -166,14 +168,11 @@ const deleteDailyLog = async (req, res) => {
       });
     }
 
-    // Update training details by subtracting the hours
-    const trainingDetails = await TrainingDetails.findOne({ student: studentId });
-    if (trainingDetails) {
-      trainingDetails.completedHours = Math.max(0, trainingDetails.completedHours - log.totalHours);
-      await trainingDetails.save();
-    }
-
     await log.deleteOne();
+
+    // Recalculate completed hours dynamically to ensure data integrity
+    await recalculateCompletedHours(studentId);
+
     res.json({ message: 'Daily log deleted successfully' });
   } catch (error) {
     console.error('Error deleting daily log:', error);
