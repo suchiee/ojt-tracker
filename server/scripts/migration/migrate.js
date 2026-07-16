@@ -18,8 +18,8 @@ const DRY_RUN = process.argv.includes('--execute') ? false : true;
 const ROLLBACK_MODE = process.argv.includes('--rollback');
 const targetRunId = process.argv.find(arg => arg.startsWith('--run-id='))?.split('=')[1] || crypto.randomUUID();
 
-// PostgreSQL Pool Connection config using the user-provided credentials
-const PG_CONNECTION_STRING = 'postgresql://postgres:suchi1316@localhost:5432/postgre';
+// PostgreSQL Pool Connection config loading from environment variables
+const PG_CONNECTION_STRING = process.env.DATABASE_URL || 'postgresql://postgres:***@localhost:5432/postgre';
 const pool = new Pool({
   connectionString: PG_CONNECTION_STRING
 });
