@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth');
 const trainingRoutes = require('./routes/training');
 const dailyLogRoutes = require('./routes/dailyLog');
 const adminRoutes = require('./routes/admin');
+const authV2Routes = require('./routes/authV2');
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +45,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/training', trainingRoutes);
 app.use('/api/daily-log', dailyLogRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/v2/auth', authV2Routes);
 
 // Root route
 app.get('/', (req, res) => {
