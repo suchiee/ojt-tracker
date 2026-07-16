@@ -37,3 +37,8 @@ EXCEPTION
         RETURN NULL;
 END;
 $$ LANGUAGE plpgsql STABLE;
+
+-- 5. Grant local dev access (allows pg pool connecting as 'postgres' to call auth.uid())
+-- In production Supabase, the authenticated/anon roles have schema access granted differently.
+GRANT USAGE ON SCHEMA auth TO postgres;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO postgres;

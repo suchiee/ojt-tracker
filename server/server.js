@@ -1,15 +1,16 @@
+const dotenv = require('dotenv');
+// Load environment variables first — before any module that reads process.env at initialization time
+dotenv.config();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const authRoutes = require('./routes/auth');
 const trainingRoutes = require('./routes/training');
 const dailyLogRoutes = require('./routes/dailyLog');
 const adminRoutes = require('./routes/admin');
 const authV2Routes = require('./routes/authV2');
-
-// Load environment variables
-dotenv.config();
+const internshipV2Routes = require('./routes/v2/internships');
 
 // Initialize Express app
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api/training', trainingRoutes);
 app.use('/api/daily-log', dailyLogRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/v2/auth', authV2Routes);
+app.use('/api/v2/internships', internshipV2Routes);
 
 // Root route
 app.get('/', (req, res) => {
