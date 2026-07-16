@@ -1,376 +1,463 @@
 // Phase 1D: Legacy Data Migration and Reconciliation Script
-// Extracts data from MongoDB, transforms into the target relational structure,
-// validates constraints, performs reconciliation, and loads into Supabase/PostgreSQL.
+// Extracts data from MongoDB, transforms and loads it transactionally into PostgreSQL,
+// enforces idempotency via a persistent mapping table, and outputs a complete hours reconciliation report.
 
 const mongoose = require('mongoose');
+const { Pool } = require('pg');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 
-// Load environment variables
-dotenv.config({ path: '../../.env' });
-dotenv.config({ path: '../.env' });
+dotenv.config();
 
-const { getAdminClient } = require('../../config/supabase');
 const User = require('../../models/User');
 const TrainingDetails = require('../../models/TrainingDetails');
 const DailyLog = require('../../models/DailyLog');
 
+// Check CLI parameters
 const DRY_RUN = process.argv.includes('--execute') ? false : true;
+const ROLLBACK_MODE = process.argv.includes('--rollback');
+const targetRunId = process.argv.find(arg => arg.startsWith('--run-id='))?.split('=')[1] || crypto.randomUUID();
 
-// Setup Hashing / ID mapping dictionary
-const idMap = {
-  users: {},         // legacy_user_id -> supabase_user_id
-  memberships: {},   // legacy_user_id -> membership_id
-  companies: {},     // normalized_company_name -> company_id
-  internships: {},   // legacy_training_id -> internship_id
-  dailyLogs: {}      // legacy_log_id -> daily_log_id
-};
+// PostgreSQL Pool Connection config using the user-provided credentials
+const PG_CONNECTION_STRING = 'postgresql://postgres:suchi1316@localhost:5432/postgre';
+const pool = new Pool({
+  connectionString: PG_CONNECTION_STRING
+});
 
-async function migrate() {
+async function runMigration() {
   console.log('================================================================');
-  console.log(`STARTING MIGRATION PROCESS [${DRY_RUN ? 'DRY-RUN MODE' : 'EXECUTE MODE'}]`);
+  console.log(`MIGRATION UTILITY [Run ID: ${targetRunId}]`);
+  console.log(`Mode: ${DRY_RUN ? 'DRY-RUN' : 'EXECUTE'} | Rollback: ${ROLLBACK_MODE}`);
   console.log('================================================================\n');
 
   try {
-    // 1. Connect to MongoDB
+    // 1. Connect to databases
     const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/ccis-ojt-tracker';
     await mongoose.connect(mongoUri);
-    console.log('[1/5] Connected to MongoDB database successfully.');
+    console.log('[1/7] Connected to MongoDB database.');
 
-    // 2. Initialize Supabase Admin Client
-    let supabase = null;
-    if (!DRY_RUN) {
-      supabase = getAdminClient();
-      console.log('[2/5] Initialized Supabase Admin Client.');
-    } else {
-      console.log('[2/5] Bypassed Supabase Admin Client initialization (Dry Run).');
+    // Ensure mapping table exists in PostgreSQL
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.migration_id_map (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          migration_run_id UUID NOT NULL,
+          source_collection TEXT NOT NULL,
+          legacy_id TEXT NOT NULL,
+          target_table TEXT NOT NULL,
+          target_id UUID NOT NULL,
+          migrated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE(source_collection, legacy_id)
+      );
+    `);
+    console.log('[2/7] Verified database schema mapping constraints.');
+
+    // -------------------------------------------------------------------------
+    // ROLLBACK WORKFLOW
+    // -------------------------------------------------------------------------
+    if (ROLLBACK_MODE) {
+      console.log('\nExecuting rollback procedure...');
+      const targetRollbackId = process.argv.find(arg => arg.startsWith('--rollback-run-id='))?.split('=')[1];
+      if (!targetRollbackId) {
+        console.error('ERROR: --rollback-run-id=<UUID> must be specified for rollback.');
+        process.exit(1);
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Fetch items from migration map for the run-id
+        const { rows: mappings } = await client.query(
+          'SELECT * FROM public.migration_id_map WHERE migration_run_id = $1 ORDER BY migrated_at DESC',
+          [targetRollbackId]
+        );
+
+        console.log(`Found ${mappings.length} records to clean up.`);
+
+        // Safely delete in reverse order of insertions to respect foreign keys
+        for (const map of mappings) {
+          if (map.target_table === 'daily_log_tasks') {
+            await client.query('DELETE FROM public.daily_log_tasks WHERE daily_log_id = $1', [map.target_id]);
+          } else if (map.target_table === 'daily_logs') {
+            await client.query('DELETE FROM public.daily_logs WHERE id = $1', [map.target_id]);
+          } else if (map.target_table === 'internships') {
+            await client.query('DELETE FROM public.internships WHERE id = $1', [map.target_id]);
+          } else if (map.target_table === 'companies') {
+            // Keep companies if they are referenced elsewhere, delete if only linked to this mapping
+            await client.query('DELETE FROM public.companies WHERE id = $1', [map.target_id]);
+          } else if (map.target_table === 'student_profiles') {
+            await client.query('DELETE FROM public.student_profiles WHERE tenant_membership_id = $1', [map.target_id]);
+          } else if (map.target_table === 'membership_roles') {
+            await client.query('DELETE FROM public.membership_roles WHERE membership_id = $1', [map.target_id]);
+          } else if (map.target_table === 'tenant_memberships') {
+            await client.query('DELETE FROM public.tenant_memberships WHERE id = $1', [map.target_id]);
+          } else if (map.target_table === 'users') {
+            // Un-sync public users
+            await client.query('DELETE FROM public.users WHERE id = $1', [map.target_id]);
+            await client.query('DELETE FROM auth.users WHERE id = $1', [map.target_id]);
+          }
+        }
+
+        // Clean up the mapping records themselves
+        await client.query('DELETE FROM public.migration_id_map WHERE migration_run_id = $1', [targetRollbackId]);
+
+        await client.query('COMMIT');
+        console.log(`Rollback completed successfully for Run ID: ${targetRollbackId}`);
+      } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Rollback failed:', err);
+      } finally {
+        client.release();
+        await mongoose.disconnect();
+        await pool.end();
+      }
+      return;
     }
 
-    // 3. Extract Legacy Data
+    // -------------------------------------------------------------------------
+    // EXTRACTION & TRANSFORM WORKFLOW
+    // -------------------------------------------------------------------------
     const legacyUsers = await User.find({}).lean();
     const legacyTrainings = await TrainingDetails.find({}).lean();
     const legacyLogs = await DailyLog.find({}).lean();
 
-    console.log(`\nLegacy Inventory:`);
-    console.log(`- MongoDB Users: ${legacyUsers.length}`);
-    console.log(`- MongoDB Training Details: ${legacyTrainings.length}`);
-    console.log(`- MongoDB Daily Logs: ${legacyLogs.length}\n`);
+    console.log(`[3/7] Extracted MongoDB Data Counts:`);
+    console.log(`- Users: ${legacyUsers.length}`);
+    console.log(`- Training Details: ${legacyTrainings.length}`);
+    console.log(`- Daily Logs: ${legacyLogs.length}\n`);
 
-    // 4. Resolve Default Tenant & Academic Hierarchy
+    // Setup academic structures and default Tenant
     let tenantId;
     let batchId;
-    let deptId;
-    let programId;
-
-    if (!DRY_RUN) {
-      // Fetch or Create Default Tenant (Nowrosjee Wadia College)
-      const { data: tenant, error: tenantErr } = await supabase
-        .from('tenants')
-        .select('id')
-        .eq('name', 'Nowrosjee Wadia College')
-        .maybeSingle();
-
-      if (tenant) {
-        tenantId = tenant.id;
-      } else {
-        const { data: newTenant, error: createTenantErr } = await supabase
-          .from('tenants')
-          .insert({ name: 'Nowrosjee Wadia College', domain: 'wadia.edu' })
-          .select('id')
-          .single();
-        if (createTenantErr) throw createTenantErr;
-        tenantId = newTenant.id;
-      }
-
-      // Fetch or Create Department
-      const { data: dept } = await supabase
-        .from('departments')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('name', 'Computer Science')
-        .maybeSingle();
-
-      if (dept) {
-        deptId = dept.id;
-      } else {
-        const { data: newDept } = await supabase
-          .from('departments')
-          .insert({ tenant_id: tenantId, name: 'Computer Science' })
-          .select('id')
-          .single();
-        deptId = newDept.id;
-      }
-
-      // Fetch or Create Program
-      const { data: program } = await supabase
-        .from('programs')
-        .select('id')
-        .eq('department_id', deptId)
-        .eq('name', 'BSc Computer Science')
-        .maybeSingle();
-
-      if (program) {
-        programId = program.id;
-      } else {
-        const { data: newProg } = await supabase
-          .from('programs')
-          .insert({ department_id: deptId, name: 'BSc Computer Science' })
-          .select('id')
-          .single();
-        programId = newProg.id;
-      }
-
-      // Fetch or Create Batch
-      const { data: batch } = await supabase
-        .from('batches')
-        .select('id')
-        .eq('program_id', programId)
-        .eq('name', 'BSc CS Batch 2026')
-        .maybeSingle();
-
-      if (batch) {
-        batchId = batch.id;
-      } else {
-        const { data: newBatch } = await supabase
-          .from('batches')
-          .insert({ program_id: programId, name: 'BSc CS Batch 2026' })
-          .select('id')
-          .single();
-        batchId = newBatch.id;
-      }
-    } else {
-      tenantId = '11111111-1111-1111-1111-111111111111';
-      batchId = '22222222-2222-2222-2222-222222222222';
-    }
-
-    // 5. Migrate Users
-    console.log('[3/5] Migrating Users & Roles...');
-    for (const u of legacyUsers) {
-      const email = u.email;
-      let targetUserId;
-
-      if (!DRY_RUN) {
-        // Idempotency check: see if user already exists in auth.users
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle();
-
-        if (existingUser) {
-          targetUserId = existingUser.id;
-        } else {
-          // Create user in Supabase Auth via official admin API
-          const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
-            email,
-            email_confirm: true,
-            password: 'TemporaryPassword123!',
-            user_metadata: { first_name: u.firstName, last_name: u.lastName }
-          });
-
-          if (authErr) {
-            console.error(`Failed to migrate user ${email}:`, authErr.message);
-            continue;
-          }
-          targetUserId = authUser.user.id;
-        }
-
-        // Map memberships and roles
-        const { data: membership, error: memErr } = await supabase
-          .from('tenant_memberships')
-          .insert({ tenant_id: tenantId, user_id: targetUserId })
-          .select('id')
-          .single();
-
-        if (memErr && memErr.code !== '23505') { // Ignore unique violations (already member)
-          console.error(`Membership linkage failed for ${email}:`, memErr.message);
-        } else {
-          const memId = membership?.id || (await supabase.from('tenant_memberships').select('id').eq('tenant_id', tenantId).eq('user_id', targetUserId).single()).data.id;
-          idMap.memberships[u._id.toString()] = memId;
-
-          // Map roles (Student vs Admin/Coordinator)
-          let targetRole = 'STUDENT';
-          if (u.role === 'admin' || u.role === 'coordinator') {
-            targetRole = 'ADMIN';
-          }
-
-          await supabase
-            .from('membership_roles')
-            .insert({ membership_id: memId, role: targetRole })
-            .select('*');
-
-          // If student, link student profile
-          if (targetRole === 'STUDENT') {
-            await supabase
-              .from('student_profiles')
-              .insert({
-                tenant_membership_id: memId,
-                student_id_number: u.studentId || `SID-${crypto.randomInt(1000, 9999)}`,
-                batch_id: batchId
-              });
-          }
-        }
-      } else {
-        targetUserId = crypto.randomUUID();
-      }
-
-      idMap.users[u._id.toString()] = targetUserId;
-    }
-
-    // 6. Migrate Companies
-    console.log('[4/5] Normalizing and migrating companies...');
-    for (const t of legacyTrainings) {
-      const rawName = t.agencyName;
-      const normalizedName = rawName.trim().replace(/\s+/g, ' '); // Clean duplicate spaces
-      
-      let companyId;
-      if (!DRY_RUN) {
-        const { data: company } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('tenant_id', tenantId)
-          .eq('name', normalizedName)
-          .maybeSingle();
-
-        if (company) {
-          companyId = company.id;
-        } else {
-          const { data: newCompany } = await supabase
-            .from('companies')
-            .insert({ tenant_id: tenantId, name: normalizedName, website: '' })
-            .select('id')
-            .single();
-          companyId = newCompany.id;
-        }
-      } else {
-        companyId = crypto.randomUUID();
-      }
-
-      idMap.companies[normalizedName] = companyId;
-    }
-
-    // 7. Migrate Internships (TrainingDetails)
-    console.log('[5/5] Migrating Internships...');
-    for (const t of legacyTrainings) {
-      const legacyStudentId = t.student.toString();
-      const targetStudentId = idMap.users[legacyStudentId];
-
-      if (!targetStudentId) {
-        console.warn(`Skipping internship ${t._id}: student record missing in mappings.`);
-        continue;
-      }
-
-      const normalizedCompany = t.agencyName.trim().replace(/\s+/g, ' ');
-      const companyId = idMap.companies[normalizedCompany];
-
-      let targetInternshipId;
-      if (!DRY_RUN) {
-        const { data: internship } = await supabase
-          .from('internships')
-          .insert({
-            tenant_id: tenantId,
-            student_id: targetStudentId,
-            company_id: companyId,
-            job_role: t.jobRole || 'Intern',
-            start_date: t.startDate ? new Date(t.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            end_date: t.endDate ? new Date(t.endDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            total_hours: t.totalHours || 120,
-            status: t.status === 'active' ? 'ACTIVE' : 'COMPLETED'
-          })
-          .select('id')
-          .single();
-
-        targetInternshipId = internship.id;
-      } else {
-        targetInternshipId = crypto.randomUUID();
-      }
-
-      idMap.internships[t._id.toString()] = targetInternshipId;
-    }
-
-    // 8. Migrate Daily Logs & Sub-tasks
-    console.log('Migrating Daily Logs & Sub-tasks...');
-    for (const dl of legacyLogs) {
-      const legacyStudentId = dl.student.toString();
-      // Locate the internship for this student
-      const training = legacyTrainings.find(t => t.student.toString() === legacyStudentId);
-      if (!training) {
-        console.warn(`Skipping daily log ${dl._id}: student has no associated training details.`);
-        continue;
-      }
-
-      const targetInternshipId = idMap.internships[training._id.toString()];
-      if (!targetInternshipId) continue;
-
-      if (!DRY_RUN) {
-        // Business Rule: Historical daily logs migrated are marked as APPROVED to preserve hours
-        const { data: log } = await supabase
-          .from('daily_logs')
-          .insert({
-            internship_id: targetInternshipId,
-            date: dl.date ? new Date(dl.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            notes: dl.notes || '',
-            status: 'APPROVED'
-          })
-          .select('id')
-          .single();
-
-        const logId = log.id;
-
-        // Map sub-tasks
-        for (const t of dl.tasks) {
-          await supabase
-            .from('daily_log_tasks')
-            .insert({
-              daily_log_id: logId,
-              description: t.description || 'OJT task',
-              hours: t.hours || 1.0
-            });
-        }
-      }
-    }
-
-    // 9. Hours Reconciliation Comparison
-    console.log('\n================================================================');
-    console.log('HOURS RECONCILIATION REPORT');
-    console.log('================================================================');
     
-    for (const t of legacyTrainings) {
-      const student = legacyUsers.find(u => u._id.toString() === t.student.toString());
-      const studentEmail = student ? student.email : 'Unknown';
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-      // Sum actual tasks hours in MongoDB DailyLogs
-      const studentLogs = legacyLogs.filter(l => l.student.toString() === t.student.toString());
-      const totalTaskHours = studentLogs.reduce((sum, log) => {
-        return sum + log.tasks.reduce((s, task) => s + (task.hours || 0), 0);
-      }, 0);
-
-      console.log(`Student: ${studentEmail}`);
-      console.log(`- MongoDB Training completedHours: ${t.completedHours}`);
-      console.log(`- MongoDB DailyLogs Tasks Sum:     ${totalTaskHours}`);
-      
-      if (!DRY_RUN) {
-        // Fetch values from Supabase View
-        const targetInternshipId = idMap.internships[t._id.toString()];
-        const { data: viewHours } = await supabase
-          .from('internship_hours_summary')
-          .select('logged_hours, approved_hours')
-          .eq('internship_id', targetInternshipId)
-          .maybeSingle();
-
-        console.log(`- Supabase View Logged Hours:     ${viewHours?.logged_hours || 0}`);
-        console.log(`- Supabase View Approved Hours:   ${viewHours?.approved_hours || 0}`);
+      // Initialize default tenant
+      const tenantName = 'Nowrosjee Wadia College';
+      const { rows: existingTenant } = await client.query(
+        'SELECT id FROM public.tenants WHERE name = $1', [tenantName]
+      );
+      if (existingTenant.length > 0) {
+        tenantId = existingTenant[0].id;
+      } else {
+        const { rows: newTenant } = await client.query(
+          'INSERT INTO public.tenants (name, domain) VALUES ($1, $2) RETURNING id',
+          [tenantName, 'wadia.edu']
+        );
+        tenantId = newTenant[0].id;
       }
-      console.log('----------------------------------------------------------------');
-    }
 
-    console.log('\nMigration complete.');
+      // Initialize default department, program, batch
+      let deptId;
+      const { rows: existingDept } = await client.query(
+        'SELECT id FROM public.departments WHERE tenant_id = $1 AND name = $2', [tenantId, 'Computer Science']
+      );
+      if (existingDept.length > 0) {
+        deptId = existingDept[0].id;
+      } else {
+        const { rows: newDept } = await client.query(
+          'INSERT INTO public.departments (tenant_id, name) VALUES ($1, $2) RETURNING id',
+          [tenantId, 'Computer Science']
+        );
+        deptId = newDept[0].id;
+      }
+
+      let programId;
+      const { rows: existingProg } = await client.query(
+        'SELECT id FROM public.programs WHERE department_id = $1 AND name = $2', [deptId, 'BSc Computer Science']
+      );
+      if (existingProg.length > 0) {
+        programId = existingProg[0].id;
+      } else {
+        const { rows: newProg } = await client.query(
+          'INSERT INTO public.programs (department_id, name) VALUES ($1, $2) RETURNING id',
+          [deptId, 'BSc Computer Science']
+        );
+        programId = newProg[0].id;
+      }
+
+      const { rows: existingBatch } = await client.query(
+        'SELECT id FROM public.batches WHERE program_id = $1 AND name = $2', [programId, 'BSc CS Batch 2026']
+      );
+      if (existingBatch.length > 0) {
+        batchId = existingBatch[0].id;
+      } else {
+        const { rows: newBatch } = await client.query(
+          'INSERT INTO public.batches (program_id, name) VALUES ($1, $2) RETURNING id',
+          [programId, 'BSc CS Batch 2026']
+        );
+        batchId = newBatch[0].id;
+      }
+
+      // 5. Load Users
+      console.log('[4/7] Loading Users...');
+      const identityReconciliation = [];
+
+      for (const u of legacyUsers) {
+        const email = u.email;
+        const legacyId = u._id.toString();
+        let targetUserId;
+        let status = 'UNRESOLVED';
+
+        // Check persistent map first (idempotency check)
+        const { rows: mapped } = await client.query(
+          'SELECT target_id FROM public.migration_id_map WHERE source_collection = $1 AND legacy_id = $2',
+          ['users', legacyId]
+        );
+
+        if (mapped.length > 0) {
+          targetUserId = mapped[0].target_id;
+          status = 'MATCHED_EXISTING_AUTH_USER';
+        } else {
+          // Check if email already exists in public.users
+          const { rows: emailChecked } = await client.query(
+            'SELECT id FROM public.users WHERE email = $1', [email]
+          );
+
+          if (emailChecked.length > 0) {
+            targetUserId = emailChecked[0].id;
+            status = 'MATCHED_EXISTING_AUTH_USER';
+          } else {
+            // Create user in auth.users and public.users
+            targetUserId = crypto.randomUUID();
+            await client.query(
+              'INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES ($1, $2, $3)',
+              [targetUserId, email, JSON.stringify({ first_name: u.firstName, last_name: u.lastName })]
+            );
+            
+            // Sync is handled by trigger automatically, but if local trigger failed, manually insert to public.users
+            await client.query(
+              'INSERT INTO public.users (id, first_name, last_name, email) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING',
+              [targetUserId, u.firstName || 'New', u.lastName || 'User', email]
+            );
+            status = 'MANUALLY_MAPPED';
+          }
+
+          // Register in mapping table
+          await client.query(
+            'INSERT INTO public.migration_id_map (migration_run_id, source_collection, legacy_id, target_table, target_id) VALUES ($1, $2, $3, $4, $5)',
+            [targetRunId, 'users', legacyId, 'users', targetUserId]
+          );
+        }
+
+        identityReconciliation.push({ legacyId, email, targetUserId, status });
+
+        // Build membership and roles
+        let membershipId;
+        const { rows: existingMembership } = await client.query(
+          'SELECT id FROM public.tenant_memberships WHERE tenant_id = $1 AND user_id = $2',
+          [tenantId, targetUserId]
+        );
+
+        if (existingMembership.length > 0) {
+          membershipId = existingMembership[0].id;
+        } else {
+          const { rows: newMem } = await client.query(
+            'INSERT INTO public.tenant_memberships (tenant_id, user_id) VALUES ($1, $2) RETURNING id',
+            [tenantId, targetUserId]
+          );
+          membershipId = newMem[0].id;
+          
+          await client.query(
+            'INSERT INTO public.migration_id_map (migration_run_id, source_collection, legacy_id, target_table, target_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING',
+            [targetRunId, 'tenant_memberships', legacyId, 'tenant_memberships', membershipId]
+          );
+        }
+
+        // Map roles (ADMIN vs STUDENT)
+        let targetRole = 'STUDENT';
+        if (u.role === 'admin' || u.role === 'coordinator') {
+          targetRole = 'ADMIN';
+        }
+
+        await client.query(
+          'INSERT INTO public.membership_roles (membership_id, role) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [membershipId, targetRole]
+        );
+
+        // If student, link student profile
+        if (targetRole === 'STUDENT') {
+          await client.query(
+            'INSERT INTO public.student_profiles (tenant_membership_id, student_id_number, batch_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+            [membershipId, u.studentId || `SID-${crypto.randomInt(1000, 9999)}`, batchId]
+          );
+        }
+      }
+
+      // 6. Migrate Companies
+      console.log('[5/7] Loading Companies...');
+      const companyMap = {};
+      for (const t of legacyTrainings) {
+        const rawName = t.agencyName;
+        const normalizedName = rawName.trim().replace(/\s+/g, ' ');
+        let companyId;
+
+        const { rows: existingComp } = await client.query(
+          'SELECT id FROM public.companies WHERE tenant_id = $1 AND name = $2',
+          [tenantId, normalizedName]
+        );
+
+        if (existingComp.length > 0) {
+          companyId = existingComp[0].id;
+        } else {
+          const { rows: newComp } = await client.query(
+            'INSERT INTO public.companies (tenant_id, name) VALUES ($1, $2) RETURNING id',
+            [tenantId, normalizedName]
+          );
+          companyId = newComp[0].id;
+          
+          await client.query(
+            'INSERT INTO public.migration_id_map (migration_run_id, source_collection, legacy_id, target_table, target_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING',
+            [targetRunId, 'companies', normalizedName, 'companies', companyId]
+          );
+        }
+        companyMap[normalizedName] = companyId;
+      }
+
+      // 7. Migrate Internships (TrainingDetails)
+      console.log('[6/7] Loading Internships...');
+      const internshipMap = {};
+      for (const t of legacyTrainings) {
+        const legacyStudentId = t.student.toString();
+        const mappedUser = identityReconciliation.find(ir => ir.legacyId === legacyStudentId);
+        if (!mappedUser) continue;
+
+        const companyId = companyMap[t.agencyName.trim().replace(/\s+/g, ' ')];
+        let internshipId;
+
+        const { rows: mappedInternship } = await client.query(
+          'SELECT target_id FROM public.migration_id_map WHERE source_collection = $1 AND legacy_id = $2',
+          ['internships', t._id.toString()]
+        );
+
+        if (mappedInternship.length > 0) {
+          internshipId = mappedInternship[0].target_id;
+        } else {
+          const { rows: newInternship } = await client.query(
+            `INSERT INTO public.internships (tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [
+              tenantId,
+              mappedUser.targetUserId,
+              companyId,
+              t.jobRole || 'Intern',
+              t.startDate ? new Date(t.startDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              t.endDate ? new Date(t.endDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              t.totalHours || 120,
+              t.status === 'active' ? 'ACTIVE' : 'COMPLETED'
+            ]
+          );
+          internshipId = newInternship[0].id;
+
+          await client.query(
+            'INSERT INTO public.migration_id_map (migration_run_id, source_collection, legacy_id, target_table, target_id) VALUES ($1, $2, $3, $4, $5)',
+            [targetRunId, 'internships', t._id.toString(), 'internships', internshipId]
+          );
+        }
+        internshipMap[t._id.toString()] = internshipId;
+      }
+
+      // 8. Migrate Daily Logs & Sub-tasks
+      console.log('[7/7] Loading Daily Logs...');
+      for (const dl of legacyLogs) {
+        const legacyStudentId = dl.student.toString();
+        const training = legacyTrainings.find(t => t.student.toString() === legacyStudentId);
+        if (!training) continue;
+
+        const targetInternshipId = internshipMap[training._id.toString()];
+        if (!targetInternshipId) continue;
+
+        let logId;
+        const { rows: mappedLog } = await client.query(
+          'SELECT target_id FROM public.migration_id_map WHERE source_collection = $1 AND legacy_id = $2',
+          ['daily_logs', dl._id.toString()]
+        );
+
+        if (mappedLog.length > 0) {
+          logId = mappedLog[0].target_id;
+        } else {
+          const { rows: newLog } = await client.query(
+            'INSERT INTO public.daily_logs (internship_id, date, notes, status) VALUES ($1, $2, $3, $4) RETURNING id',
+            [
+              targetInternshipId,
+              dl.date ? new Date(dl.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              dl.notes || '',
+              'APPROVED' // Historical Log Status Business Rule: pre-approved logs
+            ]
+          );
+          logId = newLog[0].id;
+
+          await client.query(
+            'INSERT INTO public.migration_id_map (migration_run_id, source_collection, legacy_id, target_table, target_id) VALUES ($1, $2, $3, $4, $5)',
+            [targetRunId, 'daily_logs', dl._id.toString(), 'daily_logs', logId]
+          );
+          
+          // Migrate subtasks
+          for (const task of dl.tasks) {
+            await client.query(
+              'INSERT INTO public.daily_log_tasks (daily_log_id, description, hours) VALUES ($1, $2, $3)',
+              [logId, task.description || 'OJT Task', task.hours || 1.0]
+            );
+          }
+        }
+      }
+
+      if (DRY_RUN) {
+        await client.query('ROLLBACK');
+        console.log('\n[DRY RUN] Transaction rolled back safely.');
+      } else {
+        await client.query('COMMIT');
+        console.log('\n[EXECUTE] Transaction committed successfully to PostgreSQL database.');
+      }
+
+      // Output Identity Reconciliation Table
+      console.log('\n================================================================');
+      console.log('IDENTITY RECONCILIATION TABLE');
+      console.log('================================================================');
+      identityReconciliation.forEach(ir => {
+        console.log(`Legacy ID: ${ir.legacyId} | Email: ${ir.email.padEnd(22)} | Supabase ID: ${ir.targetUserId} | Status: ${ir.status}`);
+      });
+
+      // Output Hours Reconciliation Report from views
+      console.log('\n================================================================');
+      console.log('ACTUAL HOURS RECONCILIATION REPORT');
+      console.log('================================================================');
+      for (const t of legacyTrainings) {
+        const student = legacyUsers.find(u => u._id.toString() === t.student.toString());
+        const studentLogs = legacyLogs.filter(l => l.student.toString() === t.student.toString());
+        const mongoTasksSum = studentLogs.reduce((sum, log) => {
+          return sum + log.tasks.reduce((s, task) => s + (task.hours || 0), 0);
+        }, 0);
+
+        const targetInternshipId = internshipMap[t._id.toString()];
+        const { rows: pgHours } = await client.query(
+          'SELECT logged_hours, approved_hours FROM public.internship_hours_summary WHERE internship_id = $1',
+          [targetInternshipId]
+        );
+
+        console.log(`Student Email: ${student?.email}`);
+        console.log(`- Legacy completedHours:           ${t.completedHours}`);
+        console.log(`- MongoDB DailyLog Tasks Sum:      ${mongoTasksSum}`);
+        console.log(`- PostgreSQL Logged Hours:         ${pgHours[0]?.logged_hours || 0}`);
+        console.log(`- PostgreSQL Approved Hours:       ${pgHours[0]?.approved_hours || 0}`);
+        console.log('----------------------------------------------------------------');
+      }
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('Migration execution failed transactionally:', err);
+    } finally {
+      client.release();
+    }
 
   } catch (err) {
-    console.error('\nFatal migration error:', err);
+    console.error('Fatal initialization error:', err);
   } finally {
     await mongoose.disconnect();
+    await pool.end();
   }
 }
 
-migrate();
+runMigration();

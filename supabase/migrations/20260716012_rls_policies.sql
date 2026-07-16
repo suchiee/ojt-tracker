@@ -259,7 +259,8 @@ WITH CHECK (
         SELECT wr.id 
         FROM weekly_reports wr
         JOIN internships i ON wr.internship_id = i.id
-        JOIN student_profiles sp ON i.student_id = sp.user_id
+        JOIN tenant_memberships tm ON i.student_id = tm.user_id
+        JOIN student_profiles sp ON tm.id = sp.tenant_membership_id
         JOIN faculty_batch_assignments fba ON sp.batch_id = fba.batch_id
         WHERE fba.faculty_user_id = auth.uid()
     )
@@ -276,7 +277,8 @@ WITH CHECK (
     internship_id IN (
         SELECT i.id 
         FROM internships i
-        JOIN student_profiles sp ON i.student_id = sp.user_id
+        JOIN tenant_memberships tm ON i.student_id = tm.user_id
+        JOIN student_profiles sp ON tm.id = sp.tenant_membership_id
         JOIN faculty_batch_assignments fba ON sp.batch_id = fba.batch_id
         WHERE fba.faculty_user_id = auth.uid()
     )
