@@ -11,6 +11,7 @@ const dailyLogRoutes = require('./routes/dailyLog');
 const adminRoutes = require('./routes/admin');
 const authV2Routes = require('./routes/authV2');
 const internshipV2Routes = require('./routes/v2/internships');
+const logsV2Routes = require('./routes/v2/logs');
 
 // Initialize Express app
 const app = express();
@@ -48,6 +49,7 @@ app.use('/api/daily-log', dailyLogRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/v2/auth', authV2Routes);
 app.use('/api/v2/internships', internshipV2Routes);
+app.use('/api/v2/internships/:internshipId/logs', logsV2Routes);
 
 // Root route
 app.get('/', (req, res) => {
