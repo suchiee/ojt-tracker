@@ -197,7 +197,88 @@ const validateLogBody = (req, res, next) => {
   next();
 };
 
+// Validates log review request body
+const validateReviewBody = (req, res, next) => {
+  const { decision, feedback, reviewed_by, daily_log_id, id, reviewed_at } = req.body;
+
+  // Protect against parameter injection / metadata overrides
+  if (reviewed_by || daily_log_id || id || reviewed_at) {
+    return res.status(400).json({
+      message: 'Invalid request: Overriding reviewed_by, daily_log_id, id, or reviewed_at is strictly forbidden'
+    });
+  }
+
+  if (!decision) {
+    return res.status(400).json({ message: 'Invalid request: decision is required' });
+  }
+
+  if (decision !== 'APPROVED' && decision !== 'CORRECTION_REQUESTED') {
+    return res.status(400).json({ message: 'Invalid request: decision must be either APPROVED or CORRECTION_REQUESTED' });
+  }
+
+  if (feedback !== undefined && feedback !== null) {
+    if (typeof feedback !== 'string') {
+      return res.status(400).json({ message: 'Invalid request: feedback must be a string' });
+    }
+    const trimmedFeedback = feedback.trim();
+    if (trimmedFeedback.length > 1000) {
+      return res.status(400).json({ message: 'Invalid request: feedback cannot exceed 1000 characters' });
+    }
+    req.body.feedback = trimmedFeedback;
+  }
+
+  if (decision === 'CORRECTION_REQUESTED') {
+    if (!feedback || feedback.trim() === '') {
+      return res.status(400).json({ message: 'Invalid request: feedback comment is required for correction requests' });
+    }
+  }
+
+  next();
+};
+
+// Validates query parameters for the mentor review queue
+const validateReviewQueueParams = (req, res, next) => {
+  const { page, limit, student_id, internship_id, date, user_id, tenant_id, role } = req.query;
+
+  // Strict: Reject overrides
+  if (user_id || tenant_id || role) {
+    return res.status(400).json({
+      message: 'Invalid request: Direct query override fields are strictly forbidden'
+    });
+  }
+
+  if (page) {
+    const pageVal = parseInt(page, 10);
+    if (isNaN(pageVal) || pageVal < 1) {
+      return res.status(400).json({ message: 'Invalid request: page must be a positive integer' });
+    }
+  }
+
+  if (limit) {
+    const limitVal = parseInt(limit, 10);
+    if (isNaN(limitVal) || limitVal < 1 || limitVal > 100) {
+      return res.status(400).json({ message: 'Invalid request: limit must be an integer between 1 and 100' });
+    }
+  }
+
+  if (student_id && !validateUuid(student_id)) {
+    return res.status(400).json({ message: 'Invalid request: Malformed student_id UUID' });
+  }
+
+  if (internship_id && !validateUuid(internship_id)) {
+    return res.status(400).json({ message: 'Invalid request: Malformed internship_id UUID' });
+  }
+
+  if (date && !isValidCalendarDate(date)) {
+    return res.status(400).json({ message: 'Invalid request: date filter must be a valid calendar date in YYYY-MM-DD format' });
+  }
+
+  next();
+};
+
 module.exports = {
   validateLogParams,
-  validateLogBody
+  validateLogBody,
+  validateReviewBody,
+  validateReviewQueueParams
 };

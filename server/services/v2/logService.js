@@ -409,11 +409,279 @@ const submitLog = async (token, userId, internshipId, logId) => {
   }
 };
 
+// 7. GET MENTOR REVIEW QUEUE
+const getReviewQueue = async (token, userId, queryParams) => {
+  const page = parseInt(queryParams.page || 1, 10);
+  const limit = parseInt(queryParams.limit || 20, 10);
+  const offset = (page - 1) * limit;
+
+  const { student_id, date, internship_id } = queryParams;
+
+  if (USE_SUPABASE_CLIENT) {
+    const client = createUserContextClient(token);
+    let query = client
+      .from('daily_logs')
+      .select(`
+        id, date, notes, status, created_at, internship_id,
+        internships!inner (
+          id, job_role,
+          users!internships_student_id_fkey (id, first_name, last_name, email),
+          internship_mentor_assignments!inner (mentor_user_id, mentor_type)
+        )
+      `, { count: 'exact' })
+      .eq('status', 'SUBMITTED')
+      .eq('internships.internship_mentor_assignments.mentor_user_id', userId)
+      .eq('internships.internship_mentor_assignments.mentor_type', 'COMPANY');
+
+    if (student_id) query = query.eq('internships.student_id', student_id);
+    if (internship_id) query = query.eq('internship_id', internship_id);
+    if (date) query = query.eq('date', date);
+
+    query = query.order('date', { ascending: false }).range(offset, offset + limit - 1);
+
+    const { data, count, error } = await query;
+    if (error) throw error;
+
+    const formattedData = (data || []).map(row => ({
+      id: row.id,
+      date: row.date,
+      notes: row.notes,
+      status: row.status,
+      created_at: row.created_at,
+      internship_id: row.internship_id,
+      internship: {
+        id: row.internships?.id,
+        job_role: row.internships?.job_role,
+        student: row.internships?.users
+      }
+    }));
+
+    return {
+      data: formattedData,
+      pagination: { page, limit, total: count || 0, totalPages: Math.ceil((count || 0) / limit) }
+    };
+  }
+
+  // ── Local pg Pool Path ────────────────────────────────────────────────────
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    let whereClause = `
+      WHERE dl.status = 'SUBMITTED'
+        AND ima.mentor_user_id = auth.uid()
+        AND ima.mentor_type = 'COMPANY'
+    `;
+    const params = [limit, offset];
+    let paramIndex = 3;
+
+    if (student_id) {
+      whereClause += ` AND i.student_id = $${paramIndex}`;
+      params.push(student_id);
+      paramIndex++;
+    }
+    if (internship_id) {
+      whereClause += ` AND dl.internship_id = $${paramIndex}`;
+      params.push(internship_id);
+      paramIndex++;
+    }
+    if (date) {
+      whereClause += ` AND dl.date = $${paramIndex}`;
+      params.push(date);
+      paramIndex++;
+    }
+
+    const listSql = `
+      SELECT 
+        dl.id, dl.date, dl.notes, dl.status, dl.created_at, dl.internship_id,
+        json_build_object(
+          'id', i.id, 'job_role', i.job_role,
+          'student', json_build_object('id', u.id, 'first_name', u.first_name, 'last_name', u.last_name, 'email', u.email)
+        ) AS internship
+      FROM daily_logs dl
+      JOIN internships i ON dl.internship_id = i.id
+      JOIN users u ON i.student_id = u.id
+      JOIN internship_mentor_assignments ima ON i.id = ima.internship_id
+      ${whereClause}
+      ORDER BY dl.date DESC
+      LIMIT $1 OFFSET $2
+    `;
+
+    // Counts list
+    const countParams = params.slice(2);
+    let countParamIndex = 1;
+    let countWhere = `
+      WHERE dl.status = 'SUBMITTED'
+        AND ima.mentor_user_id = auth.uid()
+        AND ima.mentor_type = 'COMPANY'
+    `;
+    if (student_id) {
+      countWhere += ` AND i.student_id = $${countParamIndex}`;
+      countParamIndex++;
+    }
+    if (internship_id) {
+      countWhere += ` AND dl.internship_id = $${countParamIndex}`;
+      countParamIndex++;
+    }
+    if (date) {
+      countWhere += ` AND dl.date = $${countParamIndex}`;
+      countParamIndex++;
+    }
+
+    const countSql = `
+      SELECT COUNT(DISTINCT dl.id) 
+      FROM daily_logs dl
+      JOIN internships i ON dl.internship_id = i.id
+      JOIN internship_mentor_assignments ima ON i.id = ima.internship_id
+      ${countWhere}
+    `;
+
+    const [listResult, countResult] = await Promise.all([
+      client.query(listSql, params),
+      client.query(countSql, countParams)
+    ]);
+
+    await client.query('COMMIT');
+    const total = parseInt(countResult.rows[0].count, 10);
+    return {
+      data: listResult.rows || [],
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// 8. GET REVIEWS HISTORY
+const getReviewsHistory = async (token, userId, internshipId, logId) => {
+  // First verify parent access by retrieving log detail (will return null if not authorized or mismatched)
+  const parentLog = await getLogDetail(token, userId, internshipId, logId);
+  if (!parentLog) return null;
+
+  if (USE_SUPABASE_CLIENT) {
+    const client = createUserContextClient(token);
+    const { data, error } = await client
+      .from('log_reviews')
+      .select('id, daily_log_id, reviewed_by, status, feedback, reviewed_at, users(id, first_name, last_name)')
+      .eq('daily_log_id', logId)
+      .order('reviewed_at', { ascending: true });
+
+    if (error) throw error;
+    return (data || []).map(row => ({
+      id: row.id,
+      daily_log_id: row.daily_log_id,
+      reviewed_by: row.reviewed_by,
+      status: row.status,
+      feedback: row.feedback,
+      reviewed_at: row.reviewed_at,
+      reviewer: row.users
+    }));
+  }
+
+  // ── Local pg Pool Path ────────────────────────────────────────────────────
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    const historySql = `
+      SELECT 
+        lr.id, lr.daily_log_id, lr.reviewed_by, lr.status, lr.feedback, lr.reviewed_at,
+        json_build_object('id', u.id, 'first_name', u.first_name, 'last_name', u.last_name) AS reviewer
+      FROM log_reviews lr
+      JOIN users u ON lr.reviewed_by = u.id
+      WHERE lr.daily_log_id = $1
+      ORDER BY lr.reviewed_at ASC
+    `;
+    const { rows } = await client.query(historySql, [logId]);
+    await client.query('COMMIT');
+    return rows || [];
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// 9. SUBMIT MENTOR REVIEW
+const submitReview = async (token, userId, internshipId, logId, body) => {
+  const { decision, feedback } = body;
+
+  if (USE_SUPABASE_CLIENT) {
+    const client = createUserContextClient(token);
+    const { data: reviewId, error } = await client.rpc('review_daily_log', {
+      p_internship_id: internshipId,
+      p_log_id: logId,
+      p_decision: decision,
+      p_feedback: feedback || ''
+    });
+    if (error) throw error;
+
+    // Fetch newly created review record
+    const { data: reviewRow, error: fetchError } = await client
+      .from('log_reviews')
+      .select('id, daily_log_id, reviewed_by, status, feedback, reviewed_at, users(id, first_name, last_name)')
+      .eq('id', reviewId)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    return reviewRow ? {
+      id: reviewRow.id,
+      daily_log_id: reviewRow.daily_log_id,
+      reviewed_by: reviewRow.reviewed_by,
+      status: reviewRow.status,
+      feedback: reviewRow.feedback,
+      reviewed_at: reviewRow.reviewed_at,
+      reviewer: reviewRow.users
+    } : null;
+  }
+
+  // ── Local pg Pool Path ────────────────────────────────────────────────────
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    const { rows } = await client.query(
+      `SELECT public.review_daily_log($1, $2, $3, $4) as id`,
+      [internshipId, logId, decision, feedback || '']
+    );
+    const reviewId = rows[0].id;
+
+    // Read back details
+    const fetchSql = `
+      SELECT 
+        lr.id, lr.daily_log_id, lr.reviewed_by, lr.status, lr.feedback, lr.reviewed_at,
+        json_build_object('id', u.id, 'first_name', u.first_name, 'last_name', u.last_name) AS reviewer
+      FROM log_reviews lr
+      JOIN users u ON lr.reviewed_by = u.id
+      WHERE lr.id = $1
+    `;
+    const fetchRes = await client.query(fetchSql, [reviewId]);
+
+    await client.query('COMMIT');
+    return fetchRes.rows[0] || null;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   getLogsList,
   createLog,
   getLogDetail,
   updateLog,
   deleteLog,
-  submitLog
+  submitLog,
+  getReviewQueue,
+  getReviewsHistory,
+  submitReview
 };

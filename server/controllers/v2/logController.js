@@ -16,12 +16,21 @@ const handleControllerError = (err, res, actionName) => {
     return res.status(409).json({ message: 'Conflict: A daily log already exists for this date' });
   }
 
-  // 2. Resource not found or parent mismatch checks
-  if (code === 'P0002' || msg.includes('not found') || msg.includes('No rows returned')) {
+  // 2. Resource not found or parent mismatch checks (and RLS/ACL access denied code 42501)
+  if (code === 'P0002' || code === '42501' || msg.includes('not found') || msg.includes('No rows returned') || msg.includes('Access denied')) {
     return res.status(404).json({ message: 'Daily log or internship not found or access denied' });
   }
 
-  // 3. Workflow lock / state transition errors
+  // 3. Bad request input violations (decision or feedback validation errors inside RPC)
+  if (
+    code === 'D0010' || // invalid review decision
+    code === 'D0011' || // missing feedback
+    code === 'D0012'    // oversized feedback
+  ) {
+    return res.status(400).json({ message: `Bad Request: ${msg}` });
+  }
+
+  // 4. Workflow lock / state transition errors
   if (
     code === 'D0001' || // locked for editing / draft delete rule
     code === 'D0002' || // submit state check
@@ -148,11 +157,69 @@ const submitLog = async (req, res) => {
   }
 };
 
+// GET /api/v2/mentor/review-queue
+const getReviewQueue = async (req, res) => {
+  try {
+    const token = req.supabaseToken;
+    const userId = req.supabaseUser.id;
+
+    const result = await logService.getReviewQueue(token, userId, req.query);
+
+    res.status(200).json({
+      data: result.data,
+      pagination: result.pagination
+    });
+  } catch (err) {
+    handleControllerError(err, res, 'getReviewQueue');
+  }
+};
+
+// GET /api/v2/internships/:internshipId/logs/:logId/reviews
+const getReviewsHistory = async (req, res) => {
+  try {
+    const token = req.supabaseToken;
+    const userId = req.supabaseUser.id;
+    const { internshipId, logId } = req.params;
+
+    const history = await logService.getReviewsHistory(token, userId, internshipId, logId);
+
+    if (!history) {
+      return res.status(404).json({ message: 'Daily log or internship not found or access denied' });
+    }
+
+    res.status(200).json({ data: history });
+  } catch (err) {
+    handleControllerError(err, res, 'getReviewsHistory');
+  }
+};
+
+// POST /api/v2/internships/:internshipId/logs/:logId/reviews
+const submitReview = async (req, res) => {
+  try {
+    const token = req.supabaseToken;
+    const userId = req.supabaseUser.id;
+    const { internshipId, logId } = req.params;
+
+    const review = await logService.submitReview(token, userId, internshipId, logId, req.body);
+
+    if (!review) {
+      return res.status(404).json({ message: 'Daily log or internship not found or access denied' });
+    }
+
+    res.status(201).json({ data: review });
+  } catch (err) {
+    handleControllerError(err, res, 'submitReview');
+  }
+};
+
 module.exports = {
   listLogs,
   createLog,
   getLog,
   updateLog,
   deleteLog,
-  submitLog
+  submitLog,
+  getReviewQueue,
+  getReviewsHistory,
+  submitReview
 };
