@@ -74,7 +74,7 @@ export const logout = () => {
 };
 
 // Get auth token from localStorage
-const getAuthToken = () => localStorage.getItem('token');
+export const getAuthToken = () => localStorage.getItem('token');
 
 // Add auth token to requests
 api.interceptors.request.use(async (config) => {

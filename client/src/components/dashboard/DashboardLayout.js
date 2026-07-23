@@ -3,10 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthV2 } from '../../context/AuthContext';
 import {
   FaHome,
-  FaUser,
   FaSignOutAlt,
-  FaCog,
-  FaBuilding,
   FaClipboardList,
   FaFileAlt,
   FaStar
@@ -16,7 +13,7 @@ function DashboardLayout({ children, userRole }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const { profile, signOut, roles, assignments, activeMembership, loading } = useAuthV2();
+  const { profile, signOut, roles, assignments, loading } = useAuthV2();
 
   const handleLogout = async () => {
     try {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import StudentRegistration from './forms/StudentRegistration';
 import AdminRegistration from './forms/AdminRegistration';
 import LoginForm from './auth/LoginForm';
-import { FaClock, FaChartLine, FaUsersCog, FaSearch, FaFileExport, FaShieldAlt } from 'react-icons/fa';
+import { FaClock, FaChartLine, FaSearch, FaFileExport, FaShieldAlt } from 'react-icons/fa';
 
 function LandingPage() {
   const [showRoleSelection, setShowRoleSelection] = useState(false);
