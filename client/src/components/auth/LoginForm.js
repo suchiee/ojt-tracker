@@ -17,29 +17,38 @@ function LoginForm({ onClose }) {
   
     try {
       const cleanEmail = email.trim().toLowerCase();
-      console.log('Submitting login form to Supabase with email:', cleanEmail);
+      console.log('[LOGIN STEP 1] Attempting Supabase signInWithPassword for:', cleanEmail);
       
       // Sign in using Supabase Client Auth
-      await signIn(cleanEmail, password);
+      const authResult = await signIn(cleanEmail, password);
+      console.log('[LOGIN STEP 2] Supabase signInWithPassword SUCCESS. User ID:', authResult?.user?.id);
       
       // Load user profile details and roles context from backend
+      console.log('[LOGIN STEP 3] Fetching user profile and roles via refreshContext()...');
       const data = await refreshContext();
+      console.log('[LOGIN STEP 4] refreshContext data received:', data);
+
       const roles = data.roles || [];
       const memberships = data.memberships || [];
       const assignments = data.assignments || [];
 
       // Determine correct V2 dashboard redirection based on roles and assignments
       if (roles.length === 0 && memberships.length === 0) {
+        console.log('[LOGIN ROUTING] No roles or memberships -> /onboard');
         navigate('/onboard');
       } else if (roles.includes('ADMIN')) {
+        console.log('[LOGIN ROUTING] ADMIN role detected -> /admin/dashboard');
         navigate('/admin/dashboard');
       } else if (roles.includes('FACULTY_MENTOR')) {
+        console.log('[LOGIN ROUTING] FACULTY_MENTOR role detected -> /faculty/dashboard');
         navigate('/faculty/dashboard');
       } else if (roles.includes('STUDENT')) {
         // If they have explicit company mentor assignments, route to mentor dashboard
         if (assignments.length > 0) {
+          console.log('[LOGIN ROUTING] COMPANY MENTOR detected -> /mentor/dashboard');
           navigate('/mentor/dashboard');
         } else {
+          console.log('[LOGIN ROUTING] STUDENT detected -> /dashboard');
           navigate('/dashboard');
         }
       } else {
@@ -48,7 +57,7 @@ function LoginForm({ onClose }) {
       
       if (onClose) onClose();
     } catch (err) {
-      console.error('Login form error:', err);
+      console.error('[LOGIN ERROR CATCH]:', err);
       setError(err.message || 'Invalid credentials. Please check and try again.');
     } finally {
       setLoading(false);
