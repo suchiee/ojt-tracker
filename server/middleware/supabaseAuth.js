@@ -34,21 +34,13 @@ const jwt = require('jsonwebtoken');
 const { getAdminClient } = require('../config/supabase');
 
 // ── Startup safety check ───────────────────────────────────────────────────
-// Called once at module load time.
-const USE_CLOUD_AUTH = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-const USE_LOCAL_JWT_MODE = process.env.LOCAL_JWT_DEV_MODE === 'true';
+const isCloudAuth = () => !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const isLocalAuth = () => process.env.LOCAL_JWT_DEV_MODE === 'true';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
-if (IS_PRODUCTION && USE_LOCAL_JWT_MODE) {
+if (IS_PRODUCTION && isLocalAuth()) {
   console.error('FATAL SECURITY CONFIGURATION ERROR: LOCAL_JWT_DEV_MODE=true is not permitted in production.');
-  console.error('The application will not serve /api/v2 routes securely in this state.');
-  console.error('Either configure real Supabase Auth credentials or set NODE_ENV correctly.');
-  process.exit(1); // Fail closed — refuse to start
-}
-
-if (!USE_CLOUD_AUTH && !USE_LOCAL_JWT_MODE) {
-  console.warn('[STARTUP WARNING] Neither Supabase cloud auth nor LOCAL_JWT_DEV_MODE is configured.');
-  console.warn('[STARTUP WARNING] All /api/v2 requests will return 500 until authentication is configured.');
+  process.exit(1);
 }
 
 // ── JWT Verification Logic ─────────────────────────────────────────────────
@@ -64,7 +56,7 @@ const verifySupabaseAuth = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
 
     // ── CLOUD MODE ───────────────────────────────────────────────────────────
-    if (USE_CLOUD_AUTH) {
+    if (isCloudAuth()) {
       const supabase = getAdminClient();
       const { data: { user }, error } = await supabase.auth.getUser(token);
       if (error || !user) {
@@ -77,7 +69,7 @@ const verifySupabaseAuth = async (req, res, next) => {
     }
 
     // ── LOCAL DEV MODE ───────────────────────────────────────────────────────
-    if (USE_LOCAL_JWT_MODE) {
+    if (isLocalAuth()) {
       const v2Secret = process.env.V2_LOCAL_JWT_SECRET;
       if (!v2Secret) {
         console.error('[LOCAL AUTH MODE] V2_LOCAL_JWT_SECRET is not set. Cannot verify V2 tokens locally.');
