@@ -16,10 +16,11 @@ function LoginForm({ onClose }) {
     setError('');
   
     try {
-      console.log('Submitting login form to Supabase with email:', email);
+      const cleanEmail = email.trim().toLowerCase();
+      console.log('Submitting login form to Supabase with email:', cleanEmail);
       
       // Sign in using Supabase Client Auth
-      await signIn(email, password);
+      await signIn(cleanEmail, password);
       
       // Load user profile details and roles context from backend
       const data = await refreshContext();
