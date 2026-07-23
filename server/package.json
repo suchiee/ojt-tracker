@@ -9,6 +9,7 @@
     "migrate:production": "node scripts/run_migrations.js",
     "test:security": "node scripts/test_phase1h_security.js",
     "test:smoke": "node scripts/test_deployment_smoke.js",
+    "test:readiness": "node scripts/test_production_readiness.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
