@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from './supabaseClient';
 
 // API URL
 const API_URL = '/api';
@@ -76,10 +77,15 @@ export const logout = () => {
 const getAuthToken = () => localStorage.getItem('token');
 
 // Add auth token to requests
-api.interceptors.request.use((config) => {
-  const token = getAuthToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+api.interceptors.request.use(async (config) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
+  } else {
+    const legacyToken = localStorage.getItem('token');
+    if (legacyToken) {
+      config.headers.Authorization = `Bearer ${legacyToken}`;
+    }
   }
   return config;
 });

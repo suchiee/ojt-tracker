@@ -2,7 +2,7 @@ import axios from 'axios';
 import { supabase } from './supabaseClient';
 
 const apiV2 = axios.create({
-  baseURL: '/api/v2',
+  baseURL: process.env.REACT_APP_API_URL || '/api/v2',
   headers: {
     'Content-Type': 'application/json'
   }

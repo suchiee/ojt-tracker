@@ -276,9 +276,188 @@ const validateReviewQueueParams = (req, res, next) => {
   next();
 };
 
+// Validates parameters for Weekly Report routes
+const validateWeeklyReportParams = (req, res, next) => {
+  const { internshipId, reportId } = req.params;
+  const { user_id, tenant_id, role, student_id } = req.query;
+
+  // Protect against query param overrides
+  if (user_id || tenant_id || role || student_id) {
+    return res.status(400).json({
+      message: 'Invalid request: Direct query override fields are strictly forbidden'
+    });
+  }
+
+  if (internshipId && !validateUuid(internshipId)) {
+    return res.status(400).json({ message: 'Invalid request: Malformed internshipId UUID' });
+  }
+
+  if (reportId && !validateUuid(reportId)) {
+    return res.status(400).json({ message: 'Invalid request: Malformed reportId UUID' });
+  }
+
+  next();
+};
+
+// Validates Weekly Report creation body parameters
+const validateWeeklyReportBody = (req, res, next) => {
+  const { start_date, end_date, student_notes, daily_log_ids, status, id, created_at, internship_id } = req.body;
+
+  // Protect against parameter overrides/injections
+  if (status || id || created_at || internship_id) {
+    return res.status(400).json({
+      message: 'Invalid request: Overriding status, id, created_at, or internship_id is strictly forbidden'
+    });
+  }
+
+  if (!start_date || !isValidCalendarDate(start_date)) {
+    return res.status(400).json({ message: 'Invalid request: start_date is required and must be a valid calendar date (YYYY-MM-DD)' });
+  }
+
+  if (!end_date || !isValidCalendarDate(end_date)) {
+    return res.status(400).json({ message: 'Invalid request: end_date is required and must be a valid calendar date (YYYY-MM-DD)' });
+  }
+
+  if (student_notes !== undefined && student_notes !== null) {
+    if (typeof student_notes !== 'string') {
+      return res.status(400).json({ message: 'Invalid request: student_notes must be a string' });
+    }
+    req.body.student_notes = student_notes.trim();
+  }
+
+  if (daily_log_ids !== undefined && daily_log_ids !== null) {
+    if (!Array.isArray(daily_log_ids)) {
+      return res.status(400).json({ message: 'Invalid request: daily_log_ids must be an array of UUIDs' });
+    }
+    for (let i = 0; i < daily_log_ids.length; i++) {
+      if (!validateUuid(daily_log_ids[i])) {
+        return res.status(400).json({ message: `Invalid request: daily_log_ids at index ${i} is not a valid UUID` });
+      }
+    }
+  }
+
+  next();
+};
+
+// Validates Weekly Report update body parameters
+const validateWeeklyReportUpdateBody = (req, res, next) => {
+  const { start_date, end_date, student_notes, daily_log_ids, status, id, created_at, internship_id, ai_summary } = req.body;
+
+  // Protect against editing immutable dates or status fields
+  if (start_date || end_date || status || id || created_at || internship_id || ai_summary) {
+    return res.status(400).json({
+      message: 'Invalid request: Editing dates, status, ID, created_at, or AI summary is strictly forbidden'
+    });
+  }
+
+  if (student_notes !== undefined && student_notes !== null) {
+    if (typeof student_notes !== 'string') {
+      return res.status(400).json({ message: 'Invalid request: student_notes must be a string' });
+    }
+    req.body.student_notes = student_notes.trim();
+  }
+
+  if (daily_log_ids !== undefined && daily_log_ids !== null) {
+    if (!Array.isArray(daily_log_ids)) {
+      return res.status(400).json({ message: 'Invalid request: daily_log_ids must be an array of UUIDs' });
+    }
+    for (let i = 0; i < daily_log_ids.length; i++) {
+      if (!validateUuid(daily_log_ids[i])) {
+        return res.status(400).json({ message: `Invalid request: daily_log_ids at index ${i} is not a valid UUID` });
+      }
+    }
+  }
+
+  next();
+};
+
+// Validates parameters/queries for the faculty review queue
+const validateFacultyQueueParams = (req, res, next) => {
+  const { page, limit, student_id, batch_id, start_date, user_id, tenant_id, role } = req.query;
+
+  // Protect against query param overrides
+  if (user_id || tenant_id || role) {
+    return res.status(400).json({
+      message: 'Invalid request: Direct query override fields are strictly forbidden'
+    });
+  }
+
+  if (page) {
+    const pageVal = parseInt(page, 10);
+    if (isNaN(pageVal) || pageVal < 1) {
+      return res.status(400).json({ message: 'Invalid request: page must be a positive integer' });
+    }
+  }
+
+  if (limit) {
+    const limitVal = parseInt(limit, 10);
+    if (isNaN(limitVal) || limitVal < 1 || limitVal > 100) {
+      return res.status(400).json({ message: 'Invalid request: limit must be an integer between 1 and 100' });
+    }
+  }
+
+  if (student_id && !validateUuid(student_id)) {
+    return res.status(400).json({ message: 'Invalid request: Malformed student_id UUID' });
+  }
+
+  if (batch_id && !validateUuid(batch_id)) {
+    return res.status(400).json({ message: 'Invalid request: Malformed batch_id UUID' });
+  }
+
+  if (start_date && !isValidCalendarDate(start_date)) {
+    return res.status(400).json({ message: 'Invalid request: start_date filter must be a valid calendar date in YYYY-MM-DD format' });
+  }
+
+  next();
+};
+
+// Validates Faculty Review request body
+const validateFacultyReviewBody = (req, res, next) => {
+  const { decision, remarks, reviewed_by, weekly_report_id, id, reviewed_at } = req.body;
+
+  // Protect against parameter injection / metadata overrides
+  if (reviewed_by || weekly_report_id || id || reviewed_at) {
+    return res.status(400).json({
+      message: 'Invalid request: Overriding reviewed_by, weekly_report_id, id, or reviewed_at is strictly forbidden'
+    });
+  }
+
+  if (!decision) {
+    return res.status(400).json({ message: 'Invalid request: decision is required' });
+  }
+
+  if (decision !== 'APPROVED' && decision !== 'CORRECTION_REQUESTED') {
+    return res.status(400).json({ message: 'Invalid request: decision must be either APPROVED or CORRECTION_REQUESTED' });
+  }
+
+  if (remarks !== undefined && remarks !== null) {
+    if (typeof remarks !== 'string') {
+      return res.status(400).json({ message: 'Invalid request: remarks must be a string' });
+    }
+    const trimmedRemarks = remarks.trim();
+    if (trimmedRemarks.length > 1000) {
+      return res.status(400).json({ message: 'Invalid request: remarks cannot exceed 1000 characters' });
+    }
+    req.body.remarks = trimmedRemarks;
+  }
+
+  if (decision === 'CORRECTION_REQUESTED') {
+    if (!remarks || remarks.trim() === '') {
+      return res.status(400).json({ message: 'Invalid request: remarks comment is required for correction requests' });
+    }
+  }
+
+  next();
+};
+
 module.exports = {
   validateLogParams,
   validateLogBody,
   validateReviewBody,
-  validateReviewQueueParams
+  validateReviewQueueParams,
+  validateWeeklyReportParams,
+  validateWeeklyReportBody,
+  validateWeeklyReportUpdateBody,
+  validateFacultyQueueParams,
+  validateFacultyReviewBody
 };

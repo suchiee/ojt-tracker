@@ -267,6 +267,28 @@ const updateLog = async (token, userId, internshipId, logId, body) => {
 
   if (USE_SUPABASE_CLIENT) {
     const client = createUserContextClient(token);
+
+    // Pre-check: fetch current log status to enforce workflow lock server-side.
+    // Supabase JS client can silently swallow RAISE EXCEPTION errors from RETURNS VOID RPCs.
+    const { data: logRow, error: fetchErr } = await client
+      .from('daily_logs')
+      .select('status, internship_id')
+      .eq('id', logId)
+      .eq('internship_id', internshipId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!logRow) {
+      const e = new Error('Daily log not found or access denied');
+      e.code = 'P0002';
+      throw e;
+    }
+    if (!['DRAFT', 'CORRECTION_REQUESTED'].includes(logRow.status)) {
+      const e = new Error('Daily log is locked for editing');
+      e.code = 'D0001';
+      throw e;
+    }
+
     const { error } = await client.rpc('update_daily_log_with_tasks', {
       p_internship_id: internshipId,
       p_log_id: logId,
@@ -380,6 +402,27 @@ const deleteLog = async (token, userId, internshipId, logId) => {
 const submitLog = async (token, userId, internshipId, logId) => {
   if (USE_SUPABASE_CLIENT) {
     const client = createUserContextClient(token);
+
+    // Pre-check: fetch current log status to enforce submit workflow rules server-side.
+    const { data: logRow, error: fetchErr } = await client
+      .from('daily_logs')
+      .select('status, internship_id')
+      .eq('id', logId)
+      .eq('internship_id', internshipId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!logRow) {
+      const e = new Error('Daily log not found or access denied');
+      e.code = 'P0002';
+      throw e;
+    }
+    if (!['DRAFT', 'CORRECTION_REQUESTED'].includes(logRow.status)) {
+      const e = new Error('Daily log cannot be submitted in its current state');
+      e.code = 'D0002';
+      throw e;
+    }
+
     const { error } = await client.rpc('submit_daily_log', {
       p_internship_id: internshipId,
       p_log_id: logId

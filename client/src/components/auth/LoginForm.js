@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { login } from '../../services/authService';
+import { useAuthV2 } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 function LoginForm({ onClose }) {
@@ -8,6 +8,7 @@ function LoginForm({ onClose }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { signIn, refreshContext } = useAuthV2();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -15,22 +16,39 @@ function LoginForm({ onClose }) {
     setError('');
   
     try {
-      console.log('Submitting login form with email:', email);
-      // Login user
-      const response = await login(email, password);
-      const user = response.user; // Access the nested user object
-  
-      // Check if the user is the specified admin
-      if (user.role === 'admin') {
+      console.log('Submitting login form to Supabase with email:', email);
+      
+      // Sign in using Supabase Client Auth
+      await signIn(email, password);
+      
+      // Load user profile details and roles context from backend
+      const data = await refreshContext();
+      const roles = data.roles || [];
+      const memberships = data.memberships || [];
+      const assignments = data.assignments || [];
+
+      // Determine correct V2 dashboard redirection based on roles and assignments
+      if (roles.length === 0 && memberships.length === 0) {
+        navigate('/onboard');
+      } else if (roles.includes('ADMIN')) {
         navigate('/admin/dashboard');
-      } else if (user.role === 'student') {
-        navigate('/dashboard');
+      } else if (roles.includes('FACULTY_MENTOR')) {
+        navigate('/faculty/dashboard');
+      } else if (roles.includes('STUDENT')) {
+        // If they have explicit company mentor assignments, route to mentor dashboard
+        if (assignments.length > 0) {
+          navigate('/mentor/dashboard');
+        } else {
+          navigate('/dashboard');
+        }
       } else {
-        throw new Error('Unauthorized access. Only the specified admin can log in as admin.');
+        throw new Error('No authorized batch roles found for this account.');
       }
+      
+      if (onClose) onClose();
     } catch (err) {
       console.error('Login form error:', err);
-      setError(err.message || 'Invalid credentials. Please try again.');
+      setError(err.message || 'Invalid credentials. Please check and try again.');
     } finally {
       setLoading(false);
     }
@@ -41,7 +59,7 @@ function LoginForm({ onClose }) {
       <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Login</h2>
       
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">
           {error}
         </div>
       )}
@@ -56,6 +74,7 @@ function LoginForm({ onClose }) {
             placeholder="Enter your email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={loading}
           />
         </div>
         <div>
@@ -67,6 +86,7 @@ function LoginForm({ onClose }) {
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
           />
         </div>
         <div className="flex space-x-4 mt-8">

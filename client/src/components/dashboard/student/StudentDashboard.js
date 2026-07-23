@@ -5,40 +5,94 @@ import { FaCalendarAlt, FaBuilding, FaBriefcase, FaClock, FaUser, FaChartLine, F
 import {
   getTrainingDetails,
   updateTrainingDetails,
-  getDailyLogs
+  getDailyLogs as getLegacyDailyLogs
 } from '../../../services/trainingService';
+import {
+  getInternships,
+  getInternshipById
+} from '../../../services/internshipV2Service';
+import {
+  getDailyLogs
+} from '../../../services/dailyLogV2Service';
 
 function StudentDashboard() {
   const [trainingDetails, setTrainingDetails] = useState(null);
+  const [isV2, setIsV2] = useState(false);
+  const [dailyLogsCount, setDailyLogsCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [dailyLogs, setDailyLogs] = useState([]);
 
   const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const details = await getTrainingDetails();
+      setError('');
       
-      console.log('Dashboard - Training Details:', details);
+      // 1. Try to load V2 active internship from hosted Supabase
+      try {
+        const internshipsRes = await getInternships();
+        const active = (internshipsRes?.data || []).find(i => i.status === 'ACTIVE');
+        if (active) {
+          const detailsRes = await getInternshipById(active.id);
+          if (detailsRes?.data) {
+            const data = detailsRes.data;
+            setTrainingDetails({
+              id: data.id,
+              agencyName: data.companies?.name || 'Not specified',
+              mentor: 'Assigned by Coordinator',
+              jobRole: data.job_role,
+              startDate: data.start_date,
+              endDate: data.end_date,
+              totalHours: data.total_hours,
+              completedHours: data.hours_summary?.approved_hours || 0,
+              loggedHours: data.hours_summary?.logged_hours || 0,
+              status: data.status
+            });
+            setIsV2(true);
+
+            // Get total count of V2 daily logs via pagination total
+            const logsRes = await getDailyLogs(data.id, { limit: 1 });
+            setDailyLogsCount(logsRes.pagination?.total || 0);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (v2Err) {
+        console.warn('V2 Dashboard Load failed, falling back to legacy MongoDB:', v2Err.message);
+      }
+
+      // 2. Fallback to MongoDB Legacy if no active V2 internship is assigned
+      const details = await getTrainingDetails();
       if (details && details._id) {
-        setTrainingDetails(details);
+        setTrainingDetails({
+          id: details._id,
+          agencyName: details.agencyName,
+          mentor: details.mentor,
+          jobRole: details.jobRole,
+          startDate: details.startDate,
+          endDate: details.endDate,
+          totalHours: details.totalHours,
+          completedHours: details.completedHours,
+          loggedHours: details.completedHours,
+          status: details.status
+        });
+        setIsV2(false);
         
-        // Load daily logs
-        const logs = await getDailyLogs();
-        setDailyLogs(logs);
+        // Load legacy daily logs
+        const legacyLogs = await getLegacyDailyLogs();
+        setDailyLogsCount(legacyLogs.length);
       } else {
         console.log('No training details found - showing setup form');
         setTrainingDetails(null);
       }
-    } catch (error) {
-      console.log('Dashboard - Error:', error);
-      setError(error.message || 'Error loading dashboard data');
+    } catch (err) {
+      console.log('Dashboard - Error:', err);
+      setError(err.message || 'Error loading dashboard data');
       setTrainingDetails(null);
     } finally {
       setLoading(false);
     }
-  }, []); // Remove trainingDetails from dependency array
+  }, []);
 
   // Load data on component mount
   useEffect(() => {
@@ -65,21 +119,31 @@ function StudentDashboard() {
       console.log('Dashboard - Saved details:', savedDetails);
       
       if (savedDetails && savedDetails._id) {
-        // Ensure mentor field is present
         if (!savedDetails.mentor && details.mentor) {
           savedDetails.mentor = details.mentor;
         }
-        setTrainingDetails(savedDetails);
+        setTrainingDetails({
+          id: savedDetails._id,
+          agencyName: savedDetails.agencyName,
+          mentor: savedDetails.mentor,
+          jobRole: savedDetails.jobRole,
+          startDate: savedDetails.startDate,
+          endDate: savedDetails.endDate,
+          totalHours: savedDetails.totalHours,
+          completedHours: savedDetails.completedHours,
+          loggedHours: savedDetails.completedHours,
+          status: savedDetails.status
+        });
+        setIsV2(false);
       } else {
         console.log('No valid saved details received');
         setError('Invalid training details received');
       }
       
-      // Refresh dashboard data
       await loadDashboardData();
-    } catch (error) {
-      console.log('Dashboard - Setup error:', error);
-      setError(error.message || 'Error saving training details');
+    } catch (err) {
+      console.log('Dashboard - Setup error:', err);
+      setError(err.message || 'Error saving training details');
     }
   };
 
@@ -109,7 +173,9 @@ function StudentDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-2xl font-bold">Student Dashboard</div>
-                <div className="text-sm opacity-90 mt-1">Training overview and progress</div>
+                <div className="text-sm opacity-90 mt-1">
+                  Training overview & progress {isV2 ? '(Supabase V2)' : '(MongoDB Legacy)'}
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-sm">Agency</div>
@@ -120,12 +186,12 @@ function StudentDashboard() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl shadow p-4">
-              <div className="text-sm text-gray-600">Completed Hours</div>
+              <div className="text-sm text-gray-600">Approved Hours</div>
               <div className="text-2xl font-semibold text-blue-600">{trainingDetails.completedHours}</div>
             </div>
             <div className="bg-white rounded-xl shadow p-4">
-              <div className="text-sm text-gray-600">Total Hours</div>
-              <div className="text-2xl font-semibold text-gray-800">{trainingDetails.totalHours}</div>
+              <div className="text-sm text-gray-600">Logged Hours</div>
+              <div className="text-2xl font-semibold text-gray-800">{trainingDetails.loggedHours}</div>
             </div>
             <div className="bg-white rounded-xl shadow p-4">
               <div className="text-sm text-gray-600">Progress</div>
@@ -133,9 +199,10 @@ function StudentDashboard() {
             </div>
             <div className="bg-white rounded-xl shadow p-4">
               <div className="text-sm text-gray-600">Daily Logs</div>
-              <div className="text-2xl font-semibold text-indigo-600">{dailyLogs.length}</div>
+              <div className="text-2xl font-semibold text-indigo-600">{dailyLogsCount}</div>
             </div>
           </div>
+
           {/* Navigation Tabs */}
           <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex flex-wrap space-x-2 md:space-x-4">
@@ -174,12 +241,12 @@ function StudentDashboard() {
                       ></div>
                     </div>
                     <div className="mt-2 text-sm text-gray-600">
-                      {trainingDetails.completedHours} of {trainingDetails.totalHours} hours completed
+                      {trainingDetails.completedHours} of {trainingDetails.totalHours} hours approved
                     </div>
                   </div>
                   <div className="md:ml-8 flex flex-col items-center">
                     <div className="text-3xl font-bold text-blue-600">{trainingDetails.completedHours}</div>
-                    <div className="text-sm text-gray-600">Hours Completed</div>
+                    <div className="text-sm text-gray-600">Hours Approved</div>
                   </div>
                 </div>
                 
@@ -238,8 +305,8 @@ function StudentDashboard() {
                       <div>
                         <div className="text-sm text-gray-600">Daily Average</div>
                         <div className="font-medium">
-                          {dailyLogs.length > 0 
-                            ? (trainingDetails.completedHours / dailyLogs.length).toFixed(1) 
+                          {dailyLogsCount > 0 
+                            ? (trainingDetails.completedHours / dailyLogsCount).toFixed(1) 
                             : 0} hours/day
                         </div>
                       </div>

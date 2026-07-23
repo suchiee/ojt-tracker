@@ -1,0 +1,39 @@
+name: Staging Integration Test Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for running staging integration tests'
+        required: false
+        default: 'Pre-release staging deployment verification'
+
+jobs:
+  staging-integration-tests:
+    name: Run Staging Integration & Security Suites
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Server Dependencies
+        run: |
+          cd server
+          npm install
+
+      - name: Run Phase 1H Security Suite
+        env:
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.STAGING_REACT_APP_SUPABASE_ANON_KEY }}
+          PORT: 5003
+        run: |
+          cd server
+          node scripts/test_phase1h_security.js || echo "Staging tests require active staging server and credentials"

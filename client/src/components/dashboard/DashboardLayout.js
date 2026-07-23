@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuthV2 } from '../../context/AuthContext';
 import {
   FaHome,
   FaUser,
@@ -7,78 +8,95 @@ import {
   FaCog,
   FaBuilding,
   FaClipboardList,
+  FaFileAlt,
   FaStar
 } from 'react-icons/fa';
 
 function DashboardLayout({ children, userRole }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [userName, setUserName] = useState('');
-  const [loading, setLoading] = useState(true);
+  const { profile, signOut, roles, assignments, activeMembership, loading } = useAuthV2();
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
-
-  const loadUserData = () => {
+  const handleLogout = async () => {
     try {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        const userData = JSON.parse(userStr);
-        setUserName(userData.name || userData.email.split('@')[0]);
-      }
+      await signOut();
+      navigate('/');
     } catch (error) {
-      console.error('Error loading user data:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error logging out:', error);
+      navigate('/');
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.location.href = '/login';
-  };
+  // Determine active menu item roles dynamically
+  let resolvedRole = userRole?.toUpperCase() || 'STUDENT';
+  if (roles.includes('ADMIN')) {
+    resolvedRole = 'ADMIN';
+  } else if (roles.includes('FACULTY_MENTOR')) {
+    resolvedRole = 'FACULTY_MENTOR';
+  } else if (roles.includes('STUDENT')) {
+    const hasCompanyMentorAssignment = Array.isArray(assignments) && assignments.some(a => a.mentor_type === 'COMPANY');
+    if (hasCompanyMentorAssignment || location.pathname.startsWith('/mentor') || userRole === 'coordinator' || userRole === 'mentor') {
+      resolvedRole = 'MENTOR';
+    } else {
+      resolvedRole = 'STUDENT';
+    }
+  }
+
 
   const menuItems = {
-    student: [
+    STUDENT: [
       { path: '/dashboard', icon: FaHome, label: 'Overview' },
       { path: '/dashboard/daily-logs', icon: FaClipboardList, label: 'Daily Logs' },
+      { path: '/dashboard/weekly-reports', icon: FaFileAlt, label: 'Weekly Reports' },
       { path: '/dashboard/evaluation', icon: FaStar, label: 'Agency Evaluation' }
     ],
-    coordinator: [
-      { path: '/dashboard', icon: FaHome, label: 'Overview' },
-      { path: '/dashboard/students', icon: FaUser, label: 'Students' },
-      { path: '/dashboard/training-agencies', icon: FaBuilding, label: 'Training Agencies' },
-      { path: '/dashboard/settings', icon: FaCog, label: 'Settings' }
+    MENTOR: [
+      { path: '/mentor/dashboard', icon: FaHome, label: 'Review Queue' }
+    ],
+    FACULTY_MENTOR: [
+      { path: '/faculty/dashboard', icon: FaHome, label: 'Review Queue' }
+    ],
+    ADMIN: [
+      { path: '/admin/dashboard', icon: FaHome, label: 'Overview' }
     ]
   };
+
+  const userName = profile ? `${profile.first_name} ${profile.last_name}` : 'User';
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-lg">
+      <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-lg z-20">
         <div className="flex flex-col h-full">
           {/* Logo and Welcome Message */}
           <div className="p-4 border-b">
-            <h1 className="text-xl font-bold text-blue-600">OJT Tracker</h1>
-            {!loading && userName && (
-              <p className="mt-2 text-sm text-gray-600">
-                Hello, {userName}
+            <h1 className="text-xl font-bold text-blue-600 font-sans tracking-wide">OJT Tracker</h1>
+            {profile && (
+              <p className="mt-2 text-sm text-gray-600 font-medium">
+                Hello, {profile.first_name}
               </p>
             )}
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-2">
-            {menuItems[userRole]?.map((item) => {
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+            {menuItems[resolvedRole]?.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center px-4 py-2 rounded-lg transition-colors ${
+                  className={`flex items-center px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
                     isActive
                       ? 'bg-blue-50 text-blue-600'
                       : 'text-gray-600 hover:bg-gray-50'
@@ -101,19 +119,19 @@ function DashboardLayout({ children, userRole }) {
                 <div className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
                   {userName ? userName.charAt(0).toUpperCase() : 'U'}
                 </div>
-                <span className="ml-2 text-gray-700">{userName || 'User'}</span>
+                <span className="ml-2 text-gray-700 font-medium text-sm text-left truncate w-40">{userName}</span>
               </button>
 
               {/* User Menu Dropdown */}
               {showUserMenu && (
-                <div className="absolute bottom-full left-0 w-full mb-2 bg-white rounded-lg shadow-lg py-1">
+                <div className="absolute bottom-full left-0 w-full mb-2 bg-white rounded-lg shadow-lg py-1 border border-gray-100">
                   <div className="px-4 py-2 border-b">
-                    <p className="text-sm font-medium text-gray-900">{userName}</p>
-                    <p className="text-xs text-gray-500 capitalize">{userRole}</p>
+                    <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
+                    <p className="text-xs text-gray-500 capitalize">{resolvedRole.replace('_', ' ').toLowerCase()}</p>
                   </div>
                   <button
                     onClick={handleLogout}
-                    className="flex items-center w-full px-4 py-2 text-gray-700 hover:bg-gray-50"
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   >
                     <FaSignOutAlt className="mr-3" />
                     Logout
@@ -133,4 +151,4 @@ function DashboardLayout({ children, userRole }) {
   );
 }
 
-export default DashboardLayout; 
+export default DashboardLayout;

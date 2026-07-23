@@ -8,8 +8,10 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
   const [memberships, setMemberships] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [assignments, setAssignments] = useState([]);
   const [activeMembership, setActiveMembership] = useState(null);
   const [activeTenant, setActiveTenant] = useState(null);
 
@@ -18,8 +20,10 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await apiV2.get('/auth/me');
       const data = response.data;
+      setProfile(data.user || null);
       setMemberships(data.memberships || []);
       setRoles(data.roles || []);
+      setAssignments(data.assignments || []);
       
       // Attempt to load active membership from localStorage or default to first
       const storedMembershipId = localStorage.getItem('active_membership_id');
@@ -33,12 +37,16 @@ export const AuthProvider = ({ children }) => {
       } else {
         localStorage.removeItem('active_membership_id');
       }
+      return data;
     } catch (error) {
       console.error('AuthContext: Failed to load user role contexts:', error);
+      setProfile(null);
       setMemberships([]);
       setRoles([]);
+      setAssignments([]);
       setActiveMembership(null);
       setActiveTenant(null);
+      return { memberships: [], roles: [], assignments: [] };
     }
   }, []);
 
@@ -68,6 +76,7 @@ export const AuthProvider = ({ children }) => {
         } else if (event === 'SIGNED_OUT') {
           setMemberships([]);
           setRoles([]);
+          setAssignments([]);
           setActiveMembership(null);
           setActiveTenant(null);
           localStorage.removeItem('active_membership_id');
@@ -112,9 +121,11 @@ export const AuthProvider = ({ children }) => {
     user,
     session,
     loading,
+    profile,
     isAuthenticated: !!user,
     memberships,
     roles,
+    assignments,
     activeMembership,
     activeTenant,
     signIn,
@@ -122,6 +133,7 @@ export const AuthProvider = ({ children }) => {
     refreshContext,
     selectTenant
   };
+
 
   return <AuthContext.Provider value={val}>{children}</AuthContext.Provider>;
 };

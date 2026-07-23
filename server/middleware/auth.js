@@ -9,15 +9,33 @@ const verifyToken = async (req, res, next) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.userId);
-    
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
+    // Try legacy JWT first
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.userId);
+      if (user) {
+        req.user = user;
+        return next();
+      }
+    } catch (err) {
+      // Fall through to Supabase fallback
     }
 
-    req.user = user;
-    next();
+    // Fallback: Verify using Supabase Auth (if configured)
+    const { getAdminClient } = require('../config/supabase');
+    const supabase = getAdminClient();
+    if (supabase) {
+      const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
+      if (!error && supabaseUser && supabaseUser.email) {
+        const user = await User.findOne({ email: supabaseUser.email });
+        if (user) {
+          req.user = user;
+          return next();
+        }
+      }
+    }
+
+    return res.status(401).json({ message: 'User not found or unauthorized token' });
   } catch (error) {
     return res.status(401).json({ message: 'Invalid token' });
   }
