@@ -21,6 +21,8 @@ const mentorV2Routes = require('./routes/v2/mentor');
 const weeklyReportsV2Routes = require('./routes/v2/weeklyReports');
 const facultyV2Routes = require('./routes/v2/faculty');
 const adminV2Routes = require('./routes/v2/admin');
+const studentV2Routes = require('./routes/v2/student');
+
 
 // Initialize Express app
 const app = express();
@@ -120,6 +122,8 @@ app.use('/api/v2/mentor', mentorV2Routes);
 app.use('/api/v2/internships/:internshipId/weekly-reports', weeklyReportsV2Routes);
 app.use('/api/v2/faculty', facultyV2Routes);
 app.use('/api/v2/admin', adminV2Routes);
+app.use('/api/v2/student', studentV2Routes);
+
 
 // Root route
 app.get('/', (req, res) => {

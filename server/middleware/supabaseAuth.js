@@ -5,17 +5,17 @@
 // AUTHENTICATION MODE SELECTION
 // ════════════════════════════════════════════════════════════════════════════
 //
-// CLOUD MODE (default / production):
-//   Requires: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
-//   Validates: token via supabase.auth.getUser() against real Supabase Auth server
-//   RLS enforcement: real PostgreSQL RLS via user-context Supabase client
-//
-// LOCAL DEV MODE (explicit opt-in only):
+// LOCAL DEV MODE (explicit opt-in — takes PRIORITY when set):
 //   Requires: LOCAL_JWT_DEV_MODE=true AND NODE_ENV != 'production'
 //   Requires: V2_LOCAL_JWT_SECRET (dedicated secret — NOT the legacy JWT_SECRET)
 //   Validates: JWT locally using HS256 algorithm against V2_LOCAL_JWT_SECRET
 //   WARNING: Does not verify against Supabase Auth. For local testing only.
 //   Marked in all logs as [LOCAL AUTH MODE]
+//
+// CLOUD MODE (default / production):
+//   Requires: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+//   Validates: token via supabase.auth.getUser() against real Supabase Auth server
+//   RLS enforcement: real PostgreSQL RLS via user-context Supabase client
 //
 // FAIL-CLOSED RULES:
 //   NODE_ENV=production + LOCAL_JWT_DEV_MODE=true  → refuse to start (startup check)
@@ -55,20 +55,9 @@ const verifySupabaseAuth = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1];
 
-    // ── CLOUD MODE ───────────────────────────────────────────────────────────
-    if (isCloudAuth()) {
-      const supabase = getAdminClient();
-      const { data: { user }, error } = await supabase.auth.getUser(token);
-      if (error || !user) {
-        return res.status(401).json({ message: 'Unauthorized: Invalid or expired access token' });
-      }
-      req.supabaseUser = user;
-      req.supabaseToken = token;
-      req.authMode = 'CLOUD_SUPABASE_AUTH';
-      return next();
-    }
-
-    // ── LOCAL DEV MODE ───────────────────────────────────────────────────────
+    // ── LOCAL DEV MODE (takes priority when LOCAL_JWT_DEV_MODE=true) ────────
+    // This is checked BEFORE cloud mode so that Supabase keys in .env do not
+    // accidentally override a developer's explicit LOCAL_JWT_DEV_MODE=true setting.
     if (isLocalAuth()) {
       const v2Secret = process.env.V2_LOCAL_JWT_SECRET;
       if (!v2Secret) {
@@ -106,6 +95,19 @@ const verifySupabaseAuth = async (req, res, next) => {
       req.supabaseUser = { id: decoded.sub, email: decoded.email || null };
       req.supabaseToken = token;
       req.authMode = 'LOCAL_JWT_DEV_MODE';
+      return next();
+    }
+
+    // ── CLOUD MODE ───────────────────────────────────────────────────────────
+    if (isCloudAuth()) {
+      const supabase = getAdminClient();
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) {
+        return res.status(401).json({ message: 'Unauthorized: Invalid or expired access token' });
+      }
+      req.supabaseUser = user;
+      req.supabaseToken = token;
+      req.authMode = 'CLOUD_SUPABASE_AUTH';
       return next();
     }
 

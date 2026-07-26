@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaUser, FaGraduationCap, FaEnvelope, FaPhone, FaCalendar, FaVenusMars, FaBuilding, FaBriefcase } from 'react-icons/fa';
-import { getStudentProfile, updateStudentProfile } from '../../../services/studentProfileService';
+import { getStudentProfile, updateStudentProfile } from '../../../services/studentProfileV2Service';
 
 function StudentProfile() {
   const [profileData, setProfileData] = useState({
