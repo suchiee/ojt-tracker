@@ -1,0 +1,238 @@
+// Service: Phase 2B.5 Training Setup V2 Service
+// Handles retrieval and update of student training setup details in Supabase/PostgreSQL.
+
+const { createUserContextClient } = require('../../config/supabase');
+const pool = require('../../config/pgPool');
+
+const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL) && process.env.LOCAL_JWT_DEV_MODE !== 'true';
+
+const activateRlsSession = async (client, userId) => {
+  await client.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [userId]);
+};
+
+// Helper to format payload to match V1 compatibility
+const formatTrainingPayload = (internship, mentorName) => {
+  if (!internship) return null;
+
+  return {
+    id: internship.id,
+    agencyName: internship.company_name || (internship.companies && internship.companies.name) || 'Not specified',
+    mentor: mentorName || 'Assigned by Coordinator',
+    jobRole: internship.job_role,
+    startDate: internship.start_date,
+    endDate: internship.end_date,
+    totalHours: internship.total_hours,
+    completedHours: internship.completed_hours || 0,
+    loggedHours: internship.logged_hours || 0,
+    status: internship.status === 'ACTIVE' ? 'active' : internship.status.toLowerCase()
+  };
+};
+
+// ── GET TRAINING DETAILS ──────────────────────────────────────────────────────
+const getTrainingSetupData = async (token, userId) => {
+  if (USE_SUPABASE_CLIENT) {
+    const client = createUserContextClient(token);
+
+    // 1. Fetch internships for the user
+    const { data: internships, error: internshipError } = await client
+      .from('internships')
+      .select(`
+        id, job_role, start_date, end_date, total_hours, status,
+        companies(id, name),
+        internship_mentor_assignments(
+          mentor_type,
+          users:mentor_user_id(first_name, last_name)
+        )
+      `)
+      .eq('student_id', userId);
+
+    if (internshipError) throw internshipError;
+    if (!internships || internships.length === 0) return null;
+
+    // Prioritize ACTIVE internship, or fallback to the latest one
+    let active = internships.find(i => i.status === 'ACTIVE');
+    if (!active) {
+      active = internships[internships.length - 1];
+    }
+
+    // Resolve mentor name
+    let mentorName = 'Assigned by Coordinator';
+    if (active.internship_mentor_assignments && active.internship_mentor_assignments.length > 0) {
+      const companyMentor = active.internship_mentor_assignments.find(a => a.mentor_type === 'COMPANY');
+      if (companyMentor && companyMentor.users) {
+        mentorName = `${companyMentor.users.first_name || ''} ${companyMentor.users.last_name || ''}`.trim();
+      }
+    }
+
+    // Get hours summary
+    let completedHours = 0;
+    let loggedHours = 0;
+    const { data: hours, error: hoursError } = await client
+      .from('internship_hours_summary')
+      .select('logged_hours, approved_hours')
+      .eq('internship_id', active.id)
+      .maybeSingle();
+
+    if (!hoursError && hours) {
+      completedHours = parseFloat(hours.approved_hours || 0);
+      loggedHours = parseFloat(hours.logged_hours || 0);
+    }
+
+    return formatTrainingPayload(
+      {
+        ...active,
+        completed_hours: completedHours,
+        logged_hours: loggedHours
+      },
+      mentorName
+    );
+  }
+
+  // ── Local pg Pool Path ────────────────────────────────────────────────────
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    // Prioritize ACTIVE status, ordered by created_at DESC
+    const sql = `
+      SELECT 
+        i.id, i.job_role, i.start_date, i.end_date, i.total_hours, i.status,
+        c.name AS company_name,
+        mu.first_name AS mentor_first, mu.last_name AS mentor_last,
+        COALESCE(hs.approved_hours, 0)::float AS completed_hours,
+        COALESCE(hs.logged_hours, 0)::float AS logged_hours
+      FROM internships i
+      LEFT JOIN companies c ON i.company_id = c.id
+      LEFT JOIN internship_mentor_assignments ima ON i.id = ima.internship_id AND ima.mentor_type = 'COMPANY'
+      LEFT JOIN users mu ON ima.mentor_user_id = mu.id
+      LEFT JOIN internship_hours_summary hs ON i.id = hs.internship_id
+      WHERE i.student_id = $1
+      ORDER BY (CASE WHEN i.status = 'ACTIVE' THEN 1 ELSE 2 END) ASC, i.created_at DESC
+      LIMIT 1;
+    `;
+
+    const { rows } = await client.query(sql, [userId]);
+    await client.query('COMMIT');
+
+    if (rows.length === 0) return null;
+    const dbRow = rows[0];
+
+    let mentorName = 'Assigned by Coordinator';
+    if (dbRow.mentor_first || dbRow.mentor_last) {
+      mentorName = `${dbRow.mentor_first || ''} ${dbRow.mentor_last || ''}`.trim();
+    }
+
+    return formatTrainingPayload(dbRow, mentorName);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+// ── UPDATE/CREATE TRAINING DETAILS ───────────────────────────────────────────
+const updateTrainingSetupData = async (token, userId, body) => {
+  const { agencyName, mentor, jobRole, startDate, endDate, totalHours } = body;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    // 1. Get student's tenant_id
+    const tenantSql = `
+      SELECT tm.tenant_id 
+      FROM tenant_memberships tm
+      JOIN membership_roles mr ON tm.id = mr.membership_id
+      WHERE tm.user_id = $1 AND mr.role = 'STUDENT'
+      LIMIT 1;
+    `;
+    const { rows: tenantRows } = await client.query(tenantSql, [userId]);
+    if (tenantRows.length === 0) {
+      const err = new Error('User is not onboarded as a student');
+      err.code = 'U0001';
+      throw err;
+    }
+    const tenantId = tenantRows[0].tenant_id;
+
+    // 2. Resolve company_id for agencyName
+    const normalizedAgency = agencyName.trim().replace(/\s+/g, ' ');
+    const coSql = `
+      SELECT id FROM companies 
+      WHERE tenant_id = $1 AND LOWER(name) = LOWER($2) 
+      LIMIT 1;
+    `;
+    const { rows: coRows } = await client.query(coSql, [tenantId, normalizedAgency]);
+    
+    let companyId;
+    if (coRows.length > 0) {
+      companyId = coRows[0].id;
+    } else {
+      // Create new company
+      const insertCoSql = `
+        INSERT INTO companies (tenant_id, name) 
+        VALUES ($1, $2) 
+        RETURNING id;
+      `;
+      const { rows: newCoRows } = await client.query(insertCoSql, [tenantId, normalizedAgency]);
+      companyId = newCoRows[0].id;
+    }
+
+    // 3. Resolve ACTIVE internships for this student
+    const activeIntSql = `
+      SELECT id FROM internships 
+      WHERE student_id = $1 AND status = 'ACTIVE';
+    `;
+    const { rows: activeIntRows } = await client.query(activeIntSql, [userId]);
+
+    let internshipId;
+    if (activeIntRows.length > 1) {
+      const err = new Error('Multiple active training setups found');
+      err.code = 'I0002';
+      throw err;
+    } else if (activeIntRows.length === 1) {
+      // Update existing active internship
+      internshipId = activeIntRows[0].id;
+      const updateSql = `
+        UPDATE internships 
+        SET company_id = $1, job_role = $2, start_date = $3, end_date = $4, total_hours = $5 
+        WHERE id = $6;
+      `;
+      await client.query(updateSql, [companyId, jobRole, startDate, endDate, totalHours, internshipId]);
+    } else {
+      // Create new internship
+      const insertIntSql = `
+        INSERT INTO internships (tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE')
+        RETURNING id;
+      `;
+      const { rows: newIntRows } = await client.query(insertIntSql, [
+        tenantId,
+        userId,
+        companyId,
+        jobRole,
+        startDate,
+        endDate,
+        totalHours
+      ]);
+      internshipId = newIntRows[0].id;
+    }
+
+    await client.query('COMMIT');
+    client.release();
+
+    // Retrieve and return formatted details
+    return getTrainingSetupData(token, userId);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    client.release();
+    throw err;
+  }
+};
+
+module.exports = {
+  getTrainingSetupData,
+  updateTrainingSetupData
+};

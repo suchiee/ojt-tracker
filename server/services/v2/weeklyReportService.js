@@ -5,7 +5,9 @@
 const { createUserContextClient } = require('../../config/supabase');
 const pool = require('../../config/pgPool');
 
-const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL);
+// Use the Supabase client ONLY when cloud credentials are available AND we are NOT in local dev mode.
+// In LOCAL_JWT_DEV_MODE the token is a dev-only HS256 JWT that Supabase cannot verify.
+const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL) && process.env.LOCAL_JWT_DEV_MODE !== 'true';
 
 // Helper to set config properties in transaction
 const activateRlsSession = async (client, userId) => {

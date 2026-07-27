@@ -2,11 +2,11 @@
 // Executes data queries under the authenticated user's RLS context.
 //
 // DUAL-PATH ARCHITECTURE:
-//   - CLOUD MODE (SUPABASE_URL configured):
+//   - CLOUD MODE (SUPABASE_URL configured AND LOCAL_JWT_DEV_MODE != 'true'):
 //     Use createUserContextClient with the user's bearer JWT.
 //     PostgreSQL RLS is enforced automatically by Supabase PostgREST.
 //
-//   - LOCAL DEV MODE (SUPABASE_URL not configured):
+//   - LOCAL DEV MODE (LOCAL_JWT_DEV_MODE=true):
 //     Use the pg Pool with SET LOCAL request.jwt.claim.sub to emulate auth.uid().
 //     The local PostgreSQL auth mock (20260716000_supabase_auth_mock.sql) defines auth.uid()
 //     as current_setting('request.jwt.claim.sub', true)::uuid.
@@ -17,7 +17,9 @@
 const { createUserContextClient } = require('../../config/supabase');
 const pool = require('../../config/pgPool');
 
-const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL);
+// Use the Supabase client ONLY when cloud credentials are available AND we are NOT in local dev mode.
+// In LOCAL_JWT_DEV_MODE the token is a dev-only HS256 JWT that Supabase cannot verify.
+const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL) && process.env.LOCAL_JWT_DEV_MODE !== 'true';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // INTERNAL: Activate RLS context for a pg client session
