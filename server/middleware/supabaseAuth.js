@@ -82,13 +82,7 @@ const verifySupabaseAuth = async (req, res, next) => {
         return res.status(401).json({ message: 'Unauthorized: Token subject is not a valid user UUID' });
       }
 
-      // Guard: legacy JWT_SECRET must differ from V2_LOCAL_JWT_SECRET.
-      // If they're the same, a legacy token would be valid here — which is not allowed.
-      if (process.env.V2_LOCAL_JWT_SECRET === process.env.JWT_SECRET) {
-        console.error('[LOCAL AUTH MODE] SECURITY WARNING: V2_LOCAL_JWT_SECRET equals JWT_SECRET.');
-        console.error('[LOCAL AUTH MODE] Legacy JWTs would be valid for V2. Use a separate V2 secret.');
-        return res.status(500).json({ message: 'Server V2 authentication misconfiguration' });
-      }
+
 
       console.warn(`[LOCAL AUTH MODE] /api/v2 request authenticated locally for user: ${decoded.sub}`);
 
