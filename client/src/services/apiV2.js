@@ -2,7 +2,7 @@ import axios from 'axios';
 import { supabase } from './supabaseClient';
 
 const apiV2 = axios.create({
-  baseURL: 'https://internsync-api-vjil.onrender.com/api/v2',
+  baseURL: 'http://localhost:5001/api/v2',
   headers: {
     'Content-Type': 'application/json'
   }
