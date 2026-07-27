@@ -8,12 +8,7 @@ const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
-const mongoose = require('mongoose');
 const cors = require('cors');
-const authRoutes = require('./routes/auth');
-const trainingRoutes = require('./routes/training');
-const dailyLogRoutes = require('./routes/dailyLog');
-const adminRoutes = require('./routes/admin');
 const authV2Routes = require('./routes/authV2');
 const internshipV2Routes = require('./routes/v2/internships');
 const logsV2Routes = require('./routes/v2/logs');
@@ -75,27 +70,9 @@ const adminMutationLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// Middleware - Request body size limits
-// V2 endpoints are hardened to 1mb body limits
+// Body parser limits for V2
 app.use('/api/v2', express.json({ limit: '1mb' }));
 app.use('/api/v2', express.urlencoded({ extended: true, limit: '1mb' }));
-
-// Legacy V1 endpoints retain existing limit for backwards compatibility
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/ccis-ojt-tracker')
-  .then(() => {
-    console.log('Connected to MongoDB');
-    const db = mongoose.connection;
-    console.log('Database Name:', db.name);
-    console.log('Host:', db.host);
-    console.log('Port:', db.port);
-  })
-  .catch((error) => {
-    console.error('MongoDB connection error:', error);
-  });
 
 // Health check endpoint (Public, unauthenticated, exempt from rate limits)
 app.get('/api/v2/healthz', (req, res) => {
@@ -111,10 +88,6 @@ app.use('/api/v2/auth/admin/invite', authLimiter);
 app.use('/api/v2/admin/provision', adminMutationLimiter);
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/training', trainingRoutes);
-app.use('/api/daily-log', dailyLogRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/v2/auth', authV2Routes);
 app.use('/api/v2/internships', internshipV2Routes);
 app.use('/api/v2/internships/:internshipId/logs', logsV2Routes);

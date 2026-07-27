@@ -18,7 +18,7 @@ async function testMentorWorkflow() {
 
   const pgClient = new Client({
     connectionString: DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1') ? false : { rejectUnauthorized: false }
   });
   await pgClient.connect();
 
