@@ -3,11 +3,6 @@ import DashboardLayout from '../DashboardLayout';
 import TrainingSetup from './TrainingSetup';
 import { FaCalendarAlt, FaBuilding, FaBriefcase, FaClock, FaUser, FaChartLine, FaClipboardCheck } from 'react-icons/fa';
 import {
-  getTrainingDetails as getLegacyTrainingDetails,
-  updateTrainingDetails as updateLegacyTrainingDetails,
-  getDailyLogs as getLegacyDailyLogs
-} from '../../../services/trainingService';
-import {
   getTrainingDetails as getV2TrainingDetails,
   updateTrainingDetails as updateV2TrainingDetails
 } from '../../../services/trainingSetupV2Service';
@@ -21,7 +16,6 @@ import {
 
 function StudentDashboard() {
   const [trainingDetails, setTrainingDetails] = useState(null);
-  const [isV2, setIsV2] = useState(false);
   const [dailyLogsCount, setDailyLogsCount] = useState(0);
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
@@ -52,7 +46,6 @@ function StudentDashboard() {
               loggedHours: data.hours_summary?.logged_hours || 0,
               status: data.status
             });
-            setIsV2(true);
 
             // Get total count of V2 daily logs via pagination total
             const logsRes = await getDailyLogs(data.id, { limit: 1 });
@@ -67,7 +60,6 @@ function StudentDashboard() {
           const v2Details = await getV2TrainingDetails();
           if (v2Details) {
             setTrainingDetails(v2Details);
-            setIsV2(true);
 
             // Get logs count for V2
             const logsRes = await getDailyLogs(v2Details.id, { limit: 1 });
@@ -76,53 +68,20 @@ function StudentDashboard() {
             return;
           }
         } catch (v2DError) {
-          // If 404, it just means no V2 setup exists yet
           if (v2DError.response?.status !== 404 && v2DError.status !== 404) {
             console.warn('V2 training details fetch failed:', v2DError.message || v2DError);
           }
         }
       } catch (v2Err) {
-        console.warn('V2 Dashboard Load failed, falling back to legacy MongoDB:', v2Err.message || v2Err);
+        console.warn('V2 Dashboard Load failed:', v2Err.message || v2Err);
       }
 
-      // 2. Fallback to MongoDB Legacy if no active V2 internship is assigned
-      try {
-        const details = await getLegacyTrainingDetails();
-        if (details && details._id) {
-          setTrainingDetails({
-            id: details._id,
-            agencyName: details.agencyName,
-            mentor: details.mentor,
-            jobRole: details.jobRole,
-            startDate: details.startDate,
-            endDate: details.endDate,
-            totalHours: details.totalHours,
-            completedHours: details.completedHours,
-            loggedHours: details.completedHours,
-            status: details.status
-          });
-          setIsV2(false);
-          
-          // Load legacy daily logs
-          const legacyLogs = await getLegacyDailyLogs();
-          setDailyLogsCount(legacyLogs.length);
-        } else {
-          // No V1 or V2 training details found - default to V2 for new setups
-          console.log('No training details found in V1 or V2 - defaulting to V2 setup');
-          setTrainingDetails(null);
-          setIsV2(true);
-        }
-      } catch (v1Err) {
-        console.warn('V1 fallback failed:', v1Err.message || v1Err);
-        // Default to V2 setup if even V1 fails
-        setTrainingDetails(null);
-        setIsV2(true);
-      }
+      // No training details found - show setup form
+      setTrainingDetails(null);
     } catch (err) {
       console.log('Dashboard - Error:', err);
       setError(err.message || 'Error loading dashboard data');
       setTrainingDetails(null);
-      setIsV2(true);
     } finally {
       setLoading(false);
     }
@@ -149,20 +108,15 @@ function StudentDashboard() {
   const handleTrainingSetup = async (details) => {
     try {
       console.log('Dashboard - Submitting details:', details);
-      let savedDetails;
-      if (isV2) {
-        savedDetails = await updateV2TrainingDetails(details);
-      } else {
-        savedDetails = await updateLegacyTrainingDetails(details);
-      }
+      const savedDetails = await updateV2TrainingDetails(details);
       console.log('Dashboard - Saved details:', savedDetails);
       
-      if (savedDetails && (savedDetails._id || savedDetails.id)) {
+      if (savedDetails && savedDetails.id) {
         if (!savedDetails.mentor && details.mentor) {
           savedDetails.mentor = details.mentor;
         }
         setTrainingDetails({
-          id: savedDetails._id || savedDetails.id,
+          id: savedDetails.id,
           agencyName: savedDetails.agencyName,
           mentor: savedDetails.mentor,
           jobRole: savedDetails.jobRole,
@@ -212,7 +166,7 @@ function StudentDashboard() {
               <div>
                 <div className="text-2xl font-bold">Student Dashboard</div>
                 <div className="text-sm opacity-90 mt-1">
-                  Training overview & progress {isV2 ? '(Supabase V2)' : '(MongoDB Legacy)'}
+                  Training overview & progress (Supabase V2)
                 </div>
               </div>
               <div className="text-right">

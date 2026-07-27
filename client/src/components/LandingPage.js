@@ -1,6 +1,4 @@
 import React, { useState } from 'react';
-import StudentRegistration from './forms/StudentRegistration';
-import AdminRegistration from './forms/AdminRegistration';
 import LoginForm from './auth/LoginForm';
 import { FaClock, FaChartLine, FaSearch, FaFileExport, FaShieldAlt } from 'react-icons/fa';
 
@@ -80,11 +78,19 @@ function LandingPage() {
             </button>
           </>
         ) : (
-          <>
-            {selectedRole === 'student' && <StudentRegistration onBack={handleBackToRoles} />}
-           
-            {selectedRole === 'admin' && <AdminRegistration onBack={handleBackToRoles} />}
-          </>
+          <div className="text-center">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Invitation-Only Access</h3>
+            <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+              Account registration is now managed exclusively via administration email invites.
+              If you have received an invitation code, please accept the invite link sent to your email to configure your account.
+            </p>
+            <button
+              className="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-150 ease-in-out font-medium"
+              onClick={handleBackToRoles}
+            >
+              Back
+            </button>
+          </div>
         )}
       </div>
     </div>

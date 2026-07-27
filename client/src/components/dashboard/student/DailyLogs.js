@@ -15,12 +15,6 @@ import {
   FaHistory,
   FaSpinner
 } from 'react-icons/fa';
-import { 
-  getDailyLogs as getLegacyDailyLogs, 
-  createDailyLog as createLegacyDailyLog, 
-  updateDailyLog as updateLegacyDailyLog, 
-  deleteDailyLog as deleteLegacyDailyLog 
-} from '../../../services/trainingService';
 import {
   getInternships
 } from '../../../services/internshipV2Service';
@@ -42,8 +36,7 @@ function DailyLogs() {
   const [showForm, setShowForm] = useState(false);
   const [editingLogId, setEditingLogId] = useState(null);
   
-  // V2 Hybrid Context States
-  const [isV2, setIsV2] = useState(false);
+  // V2 Context States
   const [internshipId, setInternshipId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -60,14 +53,12 @@ function DailyLogs() {
       const internshipsRes = await getInternships();
       const active = (internshipsRes?.data || []).find(i => i.status === 'ACTIVE');
       if (active) {
-        setIsV2(true);
         setInternshipId(active.id);
         return active.id;
       }
     } catch (v2Err) {
-      console.warn('V2 Active Internship resolution failed, default to legacy MongoDB:', v2Err.message);
+      console.warn('V2 Active Internship resolution failed:', v2Err.message);
     }
-    setIsV2(false);
     setInternshipId(null);
     return null;
   }, []);
@@ -83,9 +74,7 @@ function DailyLogs() {
         setCurrentPage(logsRes.pagination?.page || 1);
         setTotalPages(logsRes.pagination?.totalPages || 1);
       } else {
-        // Fallback to legacy MongoDB
-        const fetchedLogs = await getLegacyDailyLogs();
-        setLogs(fetchedLogs || []);
+        setLogs([]);
         setCurrentPage(1);
         setTotalPages(1);
       }
@@ -127,7 +116,7 @@ function DailyLogs() {
 
   // Expand log row on demand to fetch tasks and review history
   const toggleExpandLog = async (log) => {
-    const logId = isV2 ? log.id : log._id;
+    const logId = log.id;
     if (expandedLogs[logId]) {
       // Collapse
       const updated = { ...expandedLogs };
@@ -143,22 +132,13 @@ function DailyLogs() {
     }));
 
     try {
-      let logTasks = [];
-      let logReviews = [];
-
-      if (isV2) {
-        // Fetch V2 Log Detail (contains tasks) and Reviews History
-        const [detailRes, reviewsRes] = await Promise.all([
-          getDailyLog(internshipId, logId),
-          getDailyLogReviews(internshipId, logId)
-        ]);
-        logTasks = detailRes.data?.tasks || [];
-        logReviews = reviewsRes.data || [];
-      } else {
-        // MongoDB legacy already holds tasks in the row object
-        logTasks = log.tasks || [];
-        logReviews = [];
-      }
+      // Fetch V2 Log Detail (contains tasks) and Reviews History
+      const [detailRes, reviewsRes] = await Promise.all([
+        getDailyLog(internshipId, logId),
+        getDailyLogReviews(internshipId, logId)
+      ]);
+      const logTasks = detailRes.data?.tasks || [];
+      const logReviews = reviewsRes.data || [];
 
       setExpandedLogs(prev => ({
         ...prev,
@@ -174,23 +154,18 @@ function DailyLogs() {
   };
 
   const handleEdit = async (log) => {
-    const logId = isV2 ? log.id : log._id;
+    const logId = log.id;
     
     // In V2, daily logs can only be edited in DRAFT or CORRECTION_REQUESTED statuses
-    if (isV2 && log.status !== 'DRAFT' && log.status !== 'CORRECTION_REQUESTED') {
+    if (log.status !== 'DRAFT' && log.status !== 'CORRECTION_REQUESTED') {
       setError('This log is submitted or approved and is locked for editing.');
       return;
     }
 
     try {
-      let fullTasks = [];
-      if (isV2) {
-        // Load details to get full tasks array
-        const detailRes = await getDailyLog(internshipId, logId);
-        fullTasks = detailRes.data?.tasks || [];
-      } else {
-        fullTasks = log.tasks || [];
-      }
+      // Load details to get full tasks array
+      const detailRes = await getDailyLog(internshipId, logId);
+      const fullTasks = detailRes.data?.tasks || [];
 
       setDate(new Date(log.date).toISOString().split('T')[0]);
       setTasks(fullTasks.map(task => ({ 
@@ -208,9 +183,9 @@ function DailyLogs() {
   };
 
   const handleDelete = async (log) => {
-    const logId = isV2 ? log.id : log._id;
+    const logId = log.id;
 
-    if (isV2 && log.status !== 'DRAFT') {
+    if (log.status !== 'DRAFT') {
       setError('You can only delete daily logs in DRAFT status.');
       return;
     }
@@ -218,11 +193,7 @@ function DailyLogs() {
     if (!window.confirm('Are you sure you want to delete this log?')) return;
     
     try {
-      if (isV2) {
-        await deleteDailyLog(internshipId, logId);
-      } else {
-        await deleteLegacyDailyLog(logId);
-      }
+      await deleteDailyLog(internshipId, logId);
       await loadLogs(internshipId, currentPage);
       setError('');
     } catch (err) {
@@ -282,24 +253,11 @@ function DailyLogs() {
         notes: notes.trim()
       };
 
-      if (isV2) {
-        if (editingLogId) {
-          const { date: _, ...updatePayload } = payload;
-          await updateDailyLog(internshipId, editingLogId, updatePayload);
-        } else {
-          await createDailyLog(internshipId, payload);
-        }
+      if (editingLogId) {
+        const { date: _, ...updatePayload } = payload;
+        await updateDailyLog(internshipId, editingLogId, updatePayload);
       } else {
-        const legacyPayload = {
-          ...payload,
-          date: new Date(date).toISOString(),
-          totalHours: parseFloat(totalHours.toFixed(2))
-        };
-        if (editingLogId) {
-          await updateLegacyDailyLog(editingLogId, legacyPayload);
-        } else {
-          await createLegacyDailyLog(legacyPayload);
-        }
+        await createDailyLog(internshipId, payload);
       }
       
       resetForm();
@@ -366,7 +324,7 @@ function DailyLogs() {
             <div>
               <h2 className="text-xl font-semibold text-gray-800">Daily Work Logs</h2>
               <p className="text-xs text-gray-500 mt-1">
-                {isV2 ? 'Connected to Supabase PostgreSQL V2' : 'Connected to legacy MongoDB'}
+                Connected to Supabase PostgreSQL V2
               </p>
             </div>
             <button
@@ -448,9 +406,9 @@ function DailyLogs() {
                       </div>
                       {tasks.length > 1 && (
                         <button
-                          type="button"
-                          onClick={() => removeTask(index)}
-                          className="p-2 text-red-600 hover:text-red-800"
+                           type="button"
+                           onClick={() => removeTask(index)}
+                           className="p-2 text-red-600 hover:text-red-800"
                         >
                           <FaTrash />
                         </button>
@@ -502,7 +460,7 @@ function DailyLogs() {
           {logs.length > 0 ? (
             <div className="space-y-4">
               {logs.map((log) => {
-                const logId = isV2 ? log.id : log._id;
+                const logId = log.id;
                 const isExpanded = !!expandedLogs[logId];
                 const expData = expandedLogs[logId] || {};
                 
@@ -517,17 +475,15 @@ function DailyLogs() {
                               {new Date(log.date).toLocaleDateString()}
                             </span>
                           </div>
-                          {isV2 && getStatusBadge(log.status)}
+                          {getStatusBadge(log.status)}
                         </div>
                         <div className="text-sm text-gray-600 mb-1 flex items-center gap-3">
                           <span>
-                            Total Hours: <span className="font-semibold text-blue-600">{isV2 ? log.total_task_hours : log.totalHours}</span>
+                            Total Hours: <span className="font-semibold text-blue-600">{log.total_task_hours}</span>
                           </span>
-                          {isV2 && (
-                            <span>
-                              Tasks: <span className="font-semibold text-gray-800">{log.task_count}</span>
-                            </span>
-                          )}
+                          <span>
+                            Tasks: <span className="font-semibold text-gray-800">{log.task_count}</span>
+                          </span>
                         </div>
                       </div>
                       
@@ -542,7 +498,7 @@ function DailyLogs() {
                           {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
                         </button>
 
-                        {(!isV2 || log.status === 'DRAFT' || log.status === 'CORRECTION_REQUESTED') && (
+                        {(log.status === 'DRAFT' || log.status === 'CORRECTION_REQUESTED') && (
                           <button
                             onClick={() => handleEdit(log)}
                             className="p-2 text-blue-600 hover:text-blue-800 bg-white rounded border border-gray-200"
@@ -552,7 +508,7 @@ function DailyLogs() {
                           </button>
                         )}
 
-                        {(!isV2 || log.status === 'DRAFT') && (
+                        {(log.status === 'DRAFT') && (
                           <button
                             onClick={() => handleDelete(log)}
                             className="p-2 text-red-600 hover:text-red-800 bg-white rounded border border-gray-200"
@@ -562,7 +518,7 @@ function DailyLogs() {
                           </button>
                         )}
 
-                        {isV2 && (log.status === 'DRAFT' || log.status === 'CORRECTION_REQUESTED') && (
+                        {(log.status === 'DRAFT' || log.status === 'CORRECTION_REQUESTED') && (
                           <button
                             onClick={() => handleSubmitLog(log)}
                             className="p-2 text-green-600 hover:text-green-800 bg-white rounded border border-gray-200"
@@ -584,7 +540,7 @@ function DailyLogs() {
                         ) : (
                           <>
                             {/* Correction Requested banner */}
-                            {isV2 && log.status === 'CORRECTION_REQUESTED' && expData.reviews?.length > 0 && (
+                            {log.status === 'CORRECTION_REQUESTED' && expData.reviews?.length > 0 && (
                               <div className="p-3.5 bg-yellow-50 text-yellow-800 rounded border border-yellow-200 text-sm">
                                 <div className="font-bold flex items-center gap-1.5 mb-1 text-yellow-900">
                                   <FaExclamationTriangle className="w-4 h-4" /> Latest Correction Comments:
@@ -618,7 +574,7 @@ function DailyLogs() {
                             )}
 
                             {/* Reviews history section */}
-                            {isV2 && expData.reviews?.length > 0 && (
+                            {expData.reviews?.length > 0 && (
                               <div>
                                 <h4 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
                                   <FaHistory className="text-gray-500" /> Review History:
@@ -655,7 +611,7 @@ function DailyLogs() {
               })}
 
               {/* Pagination controls for V2 */}
-              {isV2 && totalPages > 1 && (
+              {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4 mt-6">
                   <button
                     onClick={() => loadLogs(internshipId, currentPage - 1)}

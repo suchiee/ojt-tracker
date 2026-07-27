@@ -5,8 +5,6 @@ import StudentDashboard from './components/dashboard/student/StudentDashboard';
 import Evaluation from './components/dashboard/student/Evaluation';
 import DailyLogs from './components/dashboard/student/DailyLogs';
 import WeeklyReports from './components/dashboard/student/WeeklyReports';
-import StudentRegistration from './components/forms/StudentRegistration';
-import AdminRegistration from './components/forms/AdminRegistration';
 import StudentOnboarding from './components/forms/StudentOnboarding';
 import Unauthorized from './components/auth/Unauthorized';
 import AdminDashboard from './components/dashboard/admin/AdminDashboard';
@@ -81,8 +79,6 @@ function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/register" element={<StudentRegistration />} />
-        <Route path="/register/admin" element={<AdminRegistration />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
         
         {/* Onboarding route (Must be logged in to access) */}
