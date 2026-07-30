@@ -28,10 +28,23 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// CORS configuration (Environment-driven allowed origins)
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
+const rawAllowedOrigins = process.env.ALLOWED_ORIGINS;
+
+const allowedOrigins = rawAllowedOrigins
+  ? rawAllowedOrigins
+      .split(",")
+      .map(origin => origin.trim())
+      .filter(Boolean)
+  : [];
+
+if (
+  process.env.NODE_ENV === "production" &&
+  allowedOrigins.length === 0
+) {
+  throw new Error(
+    "CORS Configuration Error: ALLOWED_ORIGINS must contain at least one valid origin in production."
+  );
+}
 
 const corsOptions = {
   origin: (origin, callback) => {

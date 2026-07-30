@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '../DashboardLayout';
 import TrainingSetup from './TrainingSetup';
+import StudentProfile from './StudentProfile';
 import { FaCalendarAlt, FaBuilding, FaBriefcase, FaClock, FaUser, FaChartLine, FaClipboardCheck } from 'react-icons/fa';
 import {
   getTrainingDetails as getV2TrainingDetails,
@@ -208,6 +209,16 @@ function StudentDashboard() {
               >
                 Overview
               </button>
+              <button
+                onClick={() => setActiveTab('profile')}
+                className={`px-4 py-2 rounded-lg font-medium ${
+                  activeTab === 'profile'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Profile
+              </button>
             </div>
           </div>
 
@@ -340,6 +351,8 @@ function StudentDashboard() {
               </div>
             </>
           )}
+
+          {activeTab === 'profile' && <StudentProfile />}
         </div>
       )}
     </DashboardLayout>

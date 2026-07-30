@@ -17,8 +17,7 @@ const activateRlsSession = async (client, userId) => {
 const getStudentProfileData = async (token, userId) => {
   if (USE_SUPABASE_CLIENT) {
     const client = createUserContextClient(token);
-
-    // 1. Fetch user, tenant memberships, roles, and batch configurations
+    console.log('[getStudentProfileData] USE_SUPABASE_CLIENT:', USE_SUPABASE_CLIENT, 'userId:', userId);
     const { data: user, error: userError } = await client
       .from('users')
       .select(`
@@ -44,21 +43,27 @@ const getStudentProfileData = async (token, userId) => {
       .eq('tenant_memberships.membership_roles.role', 'STUDENT')
       .maybeSingle();
 
-    if (userError) throw userError;
+    if (userError) {
+      console.error('[CLOUD AUTH PATH] userError:', userError);
+      throw userError;
+    }
     if (!user) return null;
 
     // 2. Fetch active internship details if exists
-    const { data: internship, error: internshipError } = await client
+    const { data: internships, error: internshipError } = await client
       .from('internships')
       .select(`
         id, job_role, start_date, end_date, total_hours, status,
         companies (name)
       `)
       .eq('student_id', userId)
-      .eq('status', 'ACTIVE')
-      .maybeSingle();
+      .eq('status', 'ACTIVE');
 
-    if (internshipError) throw internshipError;
+    if (internshipError) {
+      console.error('[CLOUD AUTH PATH] internshipError:', internshipError);
+      throw internshipError;
+    }
+    const internship = internships && internships.length > 0 ? internships[0] : null;
 
     let hoursSummary = null;
     if (internship) {

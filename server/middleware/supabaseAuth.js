@@ -97,6 +97,7 @@ const verifySupabaseAuth = async (req, res, next) => {
       const supabase = getAdminClient();
       const { data: { user }, error } = await supabase.auth.getUser(token);
       if (error || !user) {
+        console.error('[CLOUD AUTH MODE] getUser failed:', error, 'user:', user);
         return res.status(401).json({ message: 'Unauthorized: Invalid or expired access token' });
       }
       req.supabaseUser = user;

@@ -1,8 +1,13 @@
 import axios from 'axios';
 import { supabase } from './supabaseClient';
 
+const apiUrl = process.env.REACT_APP_API_URL;
+if (!apiUrl) {
+  throw new Error('REACT_APP_API_URL environment variable is required.');
+}
+
 const apiV2 = axios.create({
-  baseURL: 'http://localhost:5001/api/v2',
+  baseURL: apiUrl,
   headers: {
     'Content-Type': 'application/json'
   }

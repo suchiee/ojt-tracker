@@ -199,7 +199,6 @@ function StudentProfile() {
                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={profileData.profile.personalInfo.contactNumber}
                     onChange={(e) => handleChange('personalInfo', 'contactNumber', e.target.value)}
-                    required
                   />
                 </div>
               </div>
@@ -217,7 +216,6 @@ function StudentProfile() {
                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={profileData.profile.personalInfo.dateOfBirth}
                     onChange={(e) => handleChange('personalInfo', 'dateOfBirth', e.target.value)}
-                    required
                   />
                 </div>
               </div>
@@ -234,7 +232,6 @@ function StudentProfile() {
                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     value={profileData.profile.personalInfo.gender}
                     onChange={(e) => handleChange('personalInfo', 'gender', e.target.value)}
-                    required
                   >
                     <option value="">Select Gender</option>
                     <option value="Male">Male</option>
@@ -275,7 +272,6 @@ function StudentProfile() {
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={profileData.profile.academicInfo.degreeProgram}
                   onChange={(e) => handleChange('academicInfo', 'degreeProgram', e.target.value)}
-                  required
                 >
                   <option value="">Select Degree Program</option>
                   <option value="B.Tech">B.Tech</option>
@@ -298,7 +294,6 @@ function StudentProfile() {
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={profileData.profile.academicInfo.yearOfStudy}
                   onChange={(e) => handleChange('academicInfo', 'yearOfStudy', e.target.value)}
-                  required
                 >
                   <option value="">Select Year</option>
                   <option value="1">1st Year</option>
@@ -317,7 +312,6 @@ function StudentProfile() {
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   value={profileData.profile.academicInfo.specialization}
                   onChange={(e) => handleChange('academicInfo', 'specialization', e.target.value)}
-                  required
                 >
                   <option value="">Select Specialization</option>
                   <option value="Computer Science">Computer Science</option>
