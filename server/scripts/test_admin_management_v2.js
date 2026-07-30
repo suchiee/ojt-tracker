@@ -41,7 +41,11 @@ async function runTests() {
   console.log('=== PHASE 1G.6 TENANT ADMIN MANAGEMENT MUTATIONS & SECURITY TEST ===\n');
 
   const supabaseAnon = createClient(SUPABASE_URL, REACT_APP_SUPABASE_ANON_KEY);
-  const pgClient = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  const isLocalDb = DATABASE_URL.includes('localhost') || DATABASE_URL.includes('127.0.0.1');
+  const pgClient = new Client({
+    connectionString: DATABASE_URL,
+    ssl: isLocalDb ? false : { rejectUnauthorized: false }
+  });
   await pgClient.connect();
 
   let createdDeptId, createdProgId, createdBatchId, createdCompanyId, createdInternshipId;

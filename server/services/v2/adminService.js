@@ -1237,7 +1237,7 @@ const provisionMentor = async (token, userId, payload) => {
     );
 
     await client.query(
-      `INSERT INTO membership_roles (membership_id, role) VALUES ($1, 'STUDENT') ON CONFLICT (membership_id, role) DO NOTHING`,
+      `INSERT INTO membership_roles (membership_id, role) VALUES ($1, 'COMPANY_MENTOR') ON CONFLICT (membership_id, role) DO NOTHING`,
       [mem.id]
     );
 

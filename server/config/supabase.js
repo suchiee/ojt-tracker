@@ -2,7 +2,8 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const isProduction = process.env.NODE_ENV === 'production';
+const supabaseAnonKey = isProduction ? process.env.SUPABASE_ANON_KEY : (process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY);
 
 if (!supabaseUrl) {
   throw new Error('SUPABASE_URL environment variable is required.');

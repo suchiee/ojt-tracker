@@ -39,9 +39,10 @@ async function run() {
 
   console.log(`[MIGRATION] Found ${files.length} migration files.`);
 
+  const isLocalDb = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
   const client = new Client({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false }
+    ssl: isLocalDb ? false : { rejectUnauthorized: false }
   });
 
   try {

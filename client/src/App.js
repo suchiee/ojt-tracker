@@ -129,10 +129,11 @@ function App() {
         />
 
         {/* Protected V2 Mentor route */}
+        {/* TODO: [LEGACY] Remove 'STUDENT' fallback and requireMentorAssignments once legacy staging/demo accounts are retired */}
         <Route 
           path="/mentor/dashboard" 
           element={
-            <RoleRoute allowedRoles={['STUDENT']} requireMentorAssignments={true}>
+            <RoleRoute allowedRoles={['COMPANY_MENTOR', 'STUDENT']} requireMentorAssignments={true}>
               <MentorDashboard />
             </RoleRoute>
           } 

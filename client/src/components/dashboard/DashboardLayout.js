@@ -45,7 +45,10 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
     resolvedRole = 'ADMIN';
   } else if (roles.includes('FACULTY_MENTOR')) {
     resolvedRole = 'FACULTY_MENTOR';
+  } else if (roles.includes('COMPANY_MENTOR')) {
+    resolvedRole = 'MENTOR';
   } else if (roles.includes('STUDENT')) {
+    // TODO: [LEGACY] Remove this entire 'STUDENT' fallback block once legacy staging/demo accounts are retired
     const hasCompanyMentorAssignment = Array.isArray(assignments) && assignments.some(a => a.mentor_type === 'COMPANY');
     if (hasCompanyMentorAssignment || location.pathname.startsWith('/mentor') || userRole === 'coordinator' || userRole === 'mentor') {
       resolvedRole = 'MENTOR';
@@ -102,6 +105,14 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
     { path: '/dashboard/daily-logs', icon: FaClipboardList, label: 'Daily Logs' },
     { path: '/dashboard/weekly-reports', icon: FaFileAlt, label: 'Weekly Reports' },
     { path: '/dashboard/evaluation', icon: FaStar, label: 'Agency Evaluation' }
+  ];
+
+  const facultyMenuItems = [
+    { path: '/faculty/dashboard', icon: FaHome, label: 'Overview' }
+  ];
+
+  const mentorMenuItems = [
+    { path: '/mentor/dashboard', icon: FaHome, label: 'Overview' }
   ];
 
   if (loading) {
@@ -234,7 +245,9 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
               ))
             ) : (
               <div className="space-y-1">
-                {studentMenuItems.map((item) => {
+                {(resolvedRole === 'FACULTY_MENTOR' ? facultyMenuItems :
+                  resolvedRole === 'MENTOR' ? mentorMenuItems :
+                  studentMenuItems).map((item) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.path;
                   return (
@@ -273,7 +286,7 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
                 </button>
               </div>
               <nav className="flex-1 overflow-y-auto p-4 space-y-6">
-                {resolvedRole === 'ADMIN' &&
+                {resolvedRole === 'ADMIN' ? (
                   adminNavSections.map((sec, idx) => (
                     <div key={idx}>
                       <h3 className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
@@ -301,7 +314,30 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
                         })}
                       </div>
                     </div>
-                  ))}
+                  ))
+                ) : (
+                  <div className="space-y-1">
+                    {(resolvedRole === 'FACULTY_MENTOR' ? facultyMenuItems :
+                      resolvedRole === 'MENTOR' ? mentorMenuItems :
+                      studentMenuItems).map((item) => {
+                      const Icon = item.icon;
+                      const isActive = location.pathname === item.path;
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={() => setMobileOpen(false)}
+                          className={`flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                            isActive ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          <Icon className="mr-3 h-4 w-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
               </nav>
             </aside>
           </div>
