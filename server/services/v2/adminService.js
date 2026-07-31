@@ -4,7 +4,7 @@
 const { createUserContextClient } = require('../../config/supabase');
 const pool = require('../../config/pgPool');
 
-const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.LOCAL_JWT_DEV_MODE !== 'true';
 
 const activateRlsSession = async (client, userId) => {
   await client.query(`SELECT set_config('request.jwt.claim.sub', $1, true)`, [userId]);
@@ -1440,6 +1440,34 @@ const updateInternship = async (token, userId, internshipId, payload) => {
       throw err;
     }
 
+    if (status) {
+      if (status === 'COMPLETED' && existing.status === 'REJECTED') {
+        const err = new Error('Cannot complete a REJECTED internship');
+        err.status = 400;
+        throw err;
+      }
+      if (status === 'ACTIVE' && existing.status === 'ACTIVE') {
+        const err = new Error('Internship is already ACTIVE');
+        err.status = 400;
+        throw err;
+      }
+      if (status === 'ACTIVE' && existing.status === 'COMPLETED') {
+        const err = new Error('Cannot activate a COMPLETED internship');
+        err.status = 400;
+        throw err;
+      }
+      if (status === 'REJECTED' && existing.status === 'COMPLETED') {
+        const err = new Error('Cannot reject a COMPLETED internship');
+        err.status = 400;
+        throw err;
+      }
+      if (status === 'REJECTED' && existing.status === 'REJECTED') {
+        const err = new Error('Internship is already REJECTED');
+        err.status = 400;
+        throw err;
+      }
+    }
+
     const { rows: [updated] } = await client.query(
       `UPDATE internships SET
         job_role = COALESCE($1, job_role),
@@ -1453,6 +1481,137 @@ const updateInternship = async (token, userId, internshipId, payload) => {
     );
 
     await logAdminAudit(client, adminCtx.tenant_id, userId, 'ADMIN_UPDATE_INTERNSHIP', 'internships', updated.id, existing, updated);
+
+    await client.query('COMMIT');
+    return updated;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const approveInternship = async (token, userId, internshipId, facultyUserId) => {
+  const adminCtx = await getAdminTenantContext(token, userId);
+  if (!adminCtx) {
+    const err = new Error('Forbidden: Access is restricted to Tenant Administrators');
+    err.status = 403;
+    throw err;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    const { rows: [existing] } = await client.query(
+      `SELECT id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason FROM internships WHERE id = $1 AND tenant_id = $2`,
+      [internshipId, adminCtx.tenant_id]
+    );
+    if (!existing) {
+      const err = new Error('Internship not found in this tenant');
+      err.status = 404;
+      throw err;
+    }
+
+    if (existing.status === 'ACTIVE') {
+      const err = new Error('Internship is already ACTIVE');
+      err.status = 400;
+      throw err;
+    }
+    if (existing.status === 'COMPLETED') {
+      const err = new Error('Cannot approve a COMPLETED internship');
+      err.status = 400;
+      throw err;
+    }
+
+    const { rows: [updated] } = await client.query(
+      `UPDATE internships SET
+        status = 'ACTIVE',
+        rejection_reason = NULL
+       WHERE id = $1 AND tenant_id = $2
+       RETURNING id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason, created_at`,
+      [internshipId, adminCtx.tenant_id]
+    );
+
+    if (facultyUserId) {
+      const { rows: [facCheck] } = await client.query(
+        `SELECT id FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2`,
+        [facultyUserId, adminCtx.tenant_id]
+      );
+      if (facCheck) {
+        await client.query(
+          `INSERT INTO internship_mentor_assignments (internship_id, mentor_user_id, mentor_type, is_primary)
+           VALUES ($1, $2, 'FACULTY', true)
+           ON CONFLICT (internship_id, mentor_user_id) DO UPDATE SET is_primary = true`,
+          [internshipId, facultyUserId]
+        );
+      }
+    }
+
+    await logAdminAudit(client, adminCtx.tenant_id, userId, 'ADMIN_APPROVE_INTERNSHIP', 'internships', updated.id, existing, updated);
+
+    await client.query('COMMIT');
+    return updated;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const rejectInternship = async (token, userId, internshipId, rejectionReason) => {
+  const adminCtx = await getAdminTenantContext(token, userId);
+  if (!adminCtx) {
+    const err = new Error('Forbidden: Access is restricted to Tenant Administrators');
+    err.status = 403;
+    throw err;
+  }
+
+  if (!rejectionReason || !rejectionReason.trim()) {
+    const err = new Error('Rejection reason is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await activateRlsSession(client, userId);
+
+    const { rows: [existing] } = await client.query(
+      `SELECT id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason FROM internships WHERE id = $1 AND tenant_id = $2`,
+      [internshipId, adminCtx.tenant_id]
+    );
+    if (!existing) {
+      const err = new Error('Internship not found in this tenant');
+      err.status = 404;
+      throw err;
+    }
+
+    if (existing.status === 'COMPLETED') {
+      const err = new Error('Cannot reject a COMPLETED internship');
+      err.status = 400;
+      throw err;
+    }
+    if (existing.status === 'REJECTED') {
+      const err = new Error('Internship is already REJECTED');
+      err.status = 400;
+      throw err;
+    }
+
+    const { rows: [updated] } = await client.query(
+      `UPDATE internships SET
+        status = 'REJECTED',
+        rejection_reason = $1
+       WHERE id = $2 AND tenant_id = $3
+       RETURNING id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason, created_at`,
+      [rejectionReason.trim(), internshipId, adminCtx.tenant_id]
+    );
+
+    await logAdminAudit(client, adminCtx.tenant_id, userId, 'ADMIN_REJECT_INTERNSHIP', 'internships', updated.id, existing, updated);
 
     await client.query('COMMIT');
     return updated;
@@ -1700,7 +1859,9 @@ module.exports = {
   updateInternship,
   assignMentorToInternship,
   removeMentorFromInternship,
-  getAdminAuditLogs
+  getAdminAuditLogs,
+  approveInternship,
+  rejectInternship
 };
 
 

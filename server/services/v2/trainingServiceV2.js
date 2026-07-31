@@ -24,7 +24,8 @@ const formatTrainingPayload = (internship, mentorName) => {
     totalHours: internship.total_hours,
     completedHours: internship.completed_hours || 0,
     loggedHours: internship.logged_hours || 0,
-    status: internship.status === 'ACTIVE' ? 'active' : internship.status.toLowerCase()
+    status: internship.status,
+    rejectionReason: internship.rejection_reason || null
   };
 };
 
@@ -37,7 +38,7 @@ const getTrainingSetupData = async (token, userId) => {
     const { data: internships, error: internshipError } = await client
       .from('internships')
       .select(`
-        id, job_role, start_date, end_date, total_hours, status,
+        id, job_role, start_date, end_date, total_hours, status, rejection_reason,
         companies(id, name),
         internship_mentor_assignments(
           mentor_type,
@@ -97,7 +98,7 @@ const getTrainingSetupData = async (token, userId) => {
     // Prioritize ACTIVE status, ordered by created_at DESC
     const sql = `
       SELECT 
-        i.id, i.job_role, i.start_date, i.end_date, i.total_hours, i.status,
+        i.id, i.job_role, i.start_date, i.end_date, i.total_hours, i.status, i.rejection_reason,
         c.name AS company_name,
         mu.first_name AS mentor_first, mu.last_name AS mentor_last,
         COALESCE(hs.approved_hours, 0)::float AS completed_hours,
@@ -180,32 +181,43 @@ const updateTrainingSetupData = async (token, userId, body) => {
       companyId = newCoRows[0].id;
     }
 
-    // 3. Resolve ACTIVE internships for this student
+    // 3. Resolve any non-completed internships for this student
     const activeIntSql = `
       SELECT id FROM internships 
-      WHERE student_id = $1 AND status = 'ACTIVE';
+      WHERE student_id = $1 AND status <> 'COMPLETED';
     `;
     const { rows: activeIntRows } = await client.query(activeIntSql, [userId]);
 
     let internshipId;
+    let auditAction;
+    let beforeState = null;
+
     if (activeIntRows.length > 1) {
       const err = new Error('Multiple active training setups found');
       err.code = 'I0002';
       throw err;
     } else if (activeIntRows.length === 1) {
-      // Update existing active internship
+      // Fetch details before update to log state transition
+      const { rows: [prevDetails] } = await client.query(
+        `SELECT id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason FROM internships WHERE id = $1`,
+        [activeIntRows[0].id]
+      );
+      beforeState = prevDetails;
+
+      // Update existing internship, reset status to PENDING_VERIFICATION and clear rejection_reason
       internshipId = activeIntRows[0].id;
       const updateSql = `
         UPDATE internships 
-        SET company_id = $1, job_role = $2, start_date = $3, end_date = $4, total_hours = $5 
+        SET company_id = $1, job_role = $2, start_date = $3, end_date = $4, total_hours = $5, status = 'PENDING_VERIFICATION', rejection_reason = NULL 
         WHERE id = $6;
       `;
       await client.query(updateSql, [companyId, jobRole, startDate, endDate, totalHours, internshipId]);
+      auditAction = 'STUDENT_RESUBMIT_SETUP';
     } else {
-      // Create new internship
+      // Create new internship in PENDING_VERIFICATION status
       const insertIntSql = `
-        INSERT INTO internships (tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE')
+        INSERT INTO internships (tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING_VERIFICATION', NULL)
         RETURNING id;
       `;
       const { rows: newIntRows } = await client.query(insertIntSql, [
@@ -218,7 +230,21 @@ const updateTrainingSetupData = async (token, userId, body) => {
         totalHours
       ]);
       internshipId = newIntRows[0].id;
+      auditAction = 'STUDENT_SUBMIT_SETUP';
     }
+
+    // Log public audit entry
+    await client.query(`
+      INSERT INTO public.audit_logs (tenant_id, actor_id, action, target_table, target_id, before_state, after_state)
+      VALUES ($1, $2, $3, 'internships', $4, $5, $6)
+    `, [
+      tenantId,
+      userId,
+      auditAction,
+      internshipId,
+      beforeState ? JSON.stringify(beforeState) : null,
+      JSON.stringify({ company_id: companyId, job_role: jobRole, start_date: startDate, end_date: endDate, total_hours: totalHours, status: 'PENDING_VERIFICATION' })
+    ]);
 
     await client.query('COMMIT');
     client.release();

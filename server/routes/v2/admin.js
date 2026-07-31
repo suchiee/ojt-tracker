@@ -80,6 +80,9 @@ router.delete('/batches/:batchId/faculty/:facultyUserId', adminController.remove
 router.post('/internships', validateCreateInternship, adminController.createInternship);
 router.patch('/internships/:internshipId', validateUpdateInternship, adminController.updateInternship);
 
+router.post('/internships/:internshipId/approve', adminController.approveInternship);
+router.post('/internships/:internshipId/reject', adminController.rejectInternship);
+
 router.post('/internships/:internshipId/mentors', validateMentorAssignment, adminController.assignMentorToInternship);
 router.delete('/internships/:internshipId/mentors/:mentorUserId', adminController.removeMentorFromInternship);
 

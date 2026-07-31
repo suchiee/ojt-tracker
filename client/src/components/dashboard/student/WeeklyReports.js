@@ -87,6 +87,8 @@ const Spinner = ({ sm }) => (
 function WeeklyReports() {
   const [internshipId, setInternshipId]     = useState(null);
   const [isV2, setIsV2]                     = useState(false);
+  const [internshipStatus, setInternshipStatus] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState(null);
   const [noV2Error, setNoV2Error]           = useState('');
   const [reports, setReports]               = useState([]);
   const [loading, setLoading]               = useState(true);
@@ -115,9 +117,15 @@ function WeeklyReports() {
     (async () => {
       try {
         const res = await getInternships();
-        const active = (res?.data || []).find(i => i.status === 'ACTIVE');
+        const list = res?.data || [];
+        const active = list.find(i => i.status === 'ACTIVE') || 
+                       list.find(i => i.status === 'PENDING_VERIFICATION') || 
+                       list.find(i => i.status === 'REJECTED') ||
+                       list[list.length - 1];
         if (active) {
           setInternshipId(active.id);
+          setInternshipStatus(active.status);
+          setRejectionReason(active.rejection_reason || null);
           setIsV2(true);
         } else {
           setNoV2Error('No active V2 internship found. Weekly Reports require an active V2 internship.');
@@ -300,6 +308,48 @@ function WeeklyReports() {
           <div className="text-5xl mb-4">📋</div>
           <h2 className="text-xl font-semibold text-gray-800 mb-2">Weekly Reports</h2>
           <p className="text-gray-500 text-sm">{noV2Error}</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const isPending = internshipStatus && (internshipStatus.toLowerCase() === 'pending_verification');
+  const isRejected = internshipStatus && (internshipStatus.toLowerCase() === 'rejected');
+
+  if (isPending) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="text-4xl mb-4 animate-pulse">⏳</div>
+            <h2 className="text-xl font-bold text-yellow-900 mb-2">Training Setup Pending Verification</h2>
+            <p className="text-yellow-700 max-w-md mx-auto">
+              Your training agency and internship details have been submitted and are currently awaiting administrator verification. 
+              You will be able to compile weekly reports once the setup is approved.
+            </p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="text-4xl mb-4">⚠️</div>
+            <h2 className="text-xl font-bold text-red-900 mb-2">Training Setup Rejected</h2>
+            <p className="text-red-700 max-w-md mx-auto mb-4">
+              Your training setup was rejected by the administrator. Please update and resubmit your details under the **Overview** tab.
+            </p>
+            {rejectionReason && (
+              <div className="bg-white border border-red-100 rounded-lg p-4 text-left max-w-md mx-auto shadow-sm">
+                <span className="font-bold text-red-950 block mb-1">Rejection Reason:</span>
+                <p className="text-sm text-red-800 italic">"{rejectionReason}"</p>
+              </div>
+            )}
+          </div>
         </div>
       </DashboardLayout>
     );

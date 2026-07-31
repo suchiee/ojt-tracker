@@ -15,7 +15,9 @@ import {
   createBatch,
   provisionStudent,
   provisionFaculty,
-  assignFacultyToBatch
+  assignFacultyToBatch,
+  approveInternship,
+  rejectInternship
 } from '../../../services/adminV2Service';
 import {
   FaUserGraduate,
@@ -91,6 +93,8 @@ function AdminDashboard() {
   // Approval Dialog Modal state
   const [approvalModalItem, setApprovalModalItem] = useState(null);
   const [approvalFacultyId, setApprovalFacultyId] = useState('');
+  const [rejectionModalItem, setRejectionModalItem] = useState(null);
+  const [rejectionInputReason, setRejectionInputReason] = useState('');
 
   // Modal Form Inputs
   const [stuEmail, setStuEmail] = useState('');
@@ -300,13 +304,36 @@ function AdminDashboard() {
     setSubmittingModal(true);
     try {
       // Execute approval activation
-      setSuccessMsg(`Internship for ${approvalModalItem?.student?.first_name || 'Student'} approved and activated. Faculty Advisor assigned & Company Mentor invitation triggered.`);
+      await approveInternship(approvalModalItem.id, approvalFacultyId);
+      setSuccessMsg(`Internship for ${approvalModalItem?.student?.first_name || 'Student'} approved and activated.`);
       setApprovalModalItem(null);
       setApprovalFacultyId('');
       fetchInternships();
       fetchOverview();
     } catch (err) {
       setErrorMsg(err.response?.data?.message || 'Failed to complete internship approval.');
+    } finally {
+      setSubmittingModal(false);
+    }
+  };
+
+  // Rejection Dialog Confirm Handler
+  const handleConfirmRejection = async (e) => {
+    e.preventDefault();
+    if (!rejectionInputReason.trim()) {
+      setErrorMsg('Please enter a rejection reason.');
+      return;
+    }
+    setSubmittingModal(true);
+    try {
+      await rejectInternship(rejectionModalItem.id, rejectionInputReason.trim());
+      setSuccessMsg(`Internship for ${rejectionModalItem?.student?.first_name || 'Student'} has been rejected.`);
+      setRejectionModalItem(null);
+      setRejectionInputReason('');
+      fetchInternships();
+      fetchOverview();
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || 'Failed to reject internship.');
     } finally {
       setSubmittingModal(false);
     }
@@ -380,7 +407,7 @@ function AdminDashboard() {
 
   // Separate requests from active internships
   const activeInternships = internshipsList.filter(i => i.status === 'ACTIVE');
-  const pendingRequests = internshipsList.filter(i => i.status !== 'ACTIVE');
+  const pendingRequests = internshipsList.filter(i => i.status.toUpperCase() === 'PENDING_VERIFICATION');
 
   return (
     <DashboardLayout userRole="ADMIN" activeTab={activeTab} onTabChange={setActiveTab}>
@@ -907,10 +934,10 @@ function AdminDashboard() {
                         <FaCheck /> <span>Approve</span>
                       </button>
                       <button
-                        onClick={() => setErrorMsg(`Changes requested for ${item.student?.first_name}'s internship.`)}
-                        className="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-xs font-semibold transition flex items-center space-x-1"
+                        onClick={() => setRejectionModalItem(item)}
+                        className="px-3 py-1.5 bg-rose-600 text-white hover:bg-rose-700 rounded-lg text-xs font-semibold transition flex items-center space-x-1"
                       >
-                        <FaCommentAlt /> <span>Request Changes</span>
+                        <FaTimes /> <span>Reject</span>
                       </button>
                     </div>
                   </div>
@@ -1223,6 +1250,55 @@ function AdminDashboard() {
                   className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 shadow-sm"
                 >
                   {submittingModal ? 'Activating...' : 'Approve & Activate'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REJECTION DIALOG WITH REASON INPUT */}
+      {rejectionModalItem && (
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100 space-y-4">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <h3 className="text-lg font-bold text-gray-900">Reject Internship Placement</h3>
+              <button onClick={() => setRejectionModalItem(null)} className="text-gray-400 hover:text-gray-700"><FaTimes /></button>
+            </div>
+
+            <div className="space-y-2 text-sm bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <p><strong>Student:</strong> {rejectionModalItem.student?.first_name} {rejectionModalItem.student?.last_name}</p>
+              <p><strong>Company:</strong> {rejectionModalItem.company_name}</p>
+              <p><strong>Role:</strong> {rejectionModalItem.job_role}</p>
+            </div>
+
+            <form onSubmit={handleConfirmRejection} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Rejection Reason *</label>
+                <textarea
+                  required
+                  rows="3"
+                  value={rejectionInputReason}
+                  onChange={(e) => setRejectionInputReason(e.target.value)}
+                  placeholder="Enter the reason why this internship placement is being rejected..."
+                  className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end space-x-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setRejectionModalItem(null)}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold hover:bg-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingModal}
+                  className="px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 shadow-sm"
+                >
+                  {submittingModal ? 'Rejecting...' : 'Reject Placement'}
                 </button>
               </div>
             </form>

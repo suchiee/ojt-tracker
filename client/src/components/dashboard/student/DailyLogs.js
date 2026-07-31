@@ -47,19 +47,30 @@ function DailyLogs() {
   const [tasks, setTasks] = useState([{ description: '', hours: '' }]);
   const [notes, setNotes] = useState('');
 
+  const [internshipStatus, setInternshipStatus] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState(null);
+
   // Initial resolve of V2 Active Internship
   const resolveActiveContext = useCallback(async () => {
     try {
       const internshipsRes = await getInternships();
-      const active = (internshipsRes?.data || []).find(i => i.status === 'ACTIVE');
+      const list = internshipsRes?.data || [];
+      const active = list.find(i => i.status === 'ACTIVE') || 
+                     list.find(i => i.status === 'PENDING_VERIFICATION') || 
+                     list.find(i => i.status === 'REJECTED') ||
+                     list[list.length - 1];
       if (active) {
         setInternshipId(active.id);
+        setInternshipStatus(active.status);
+        setRejectionReason(active.rejection_reason || null);
         return active.id;
       }
     } catch (v2Err) {
       console.warn('V2 Active Internship resolution failed:', v2Err.message);
     }
     setInternshipId(null);
+    setInternshipStatus(null);
+    setRejectionReason(null);
     return null;
   }, []);
 
@@ -305,6 +316,52 @@ function DailyLogs() {
       <DashboardLayout userRole="student">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const isPending = internshipStatus && (internshipStatus.toLowerCase() === 'pending_verification');
+  const isRejected = internshipStatus && (internshipStatus.toLowerCase() === 'rejected');
+
+  if (isPending) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="flex justify-center mb-4">
+              <FaClock className="h-12 w-12 text-yellow-600 animate-pulse" />
+            </div>
+            <h2 className="text-xl font-bold text-yellow-900 mb-2">Training Setup Pending Verification</h2>
+            <p className="text-yellow-700 max-w-md mx-auto">
+              Your training agency and internship details have been submitted and are currently awaiting administrator verification. 
+              You will be able to create daily logs and log your work hours once the setup is approved.
+            </p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="flex justify-center mb-4">
+              <FaExclamationTriangle className="h-12 w-12 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-red-900 mb-2">Training Setup Rejected</h2>
+            <p className="text-red-700 max-w-md mx-auto mb-4">
+              Your training setup was rejected by the administrator. Please update and resubmit your details under the **Overview** tab.
+            </p>
+            {rejectionReason && (
+              <div className="bg-white border border-red-100 rounded-lg p-4 text-left max-w-md mx-auto shadow-sm">
+                <span className="font-bold text-red-950 block mb-1">Rejection Reason:</span>
+                <p className="text-sm text-red-800 italic">"{rejectionReason}"</p>
+              </div>
+            )}
+          </div>
         </div>
       </DashboardLayout>
     );

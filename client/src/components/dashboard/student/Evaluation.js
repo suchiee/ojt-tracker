@@ -1,8 +1,34 @@
-import React, { useState } from 'react';
-import { FaStar } from 'react-icons/fa';
+import React, { useState, useEffect } from 'react';
+import { FaStar, FaClock, FaExclamationTriangle } from 'react-icons/fa';
 import DashboardLayout from '../DashboardLayout';
+import { getInternships } from '../../../services/internshipV2Service';
 
 function Evaluation() {
+  const [internshipStatus, setInternshipStatus] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getInternships();
+        const list = res?.data || [];
+        const active = list.find(i => i.status === 'ACTIVE') || 
+                       list.find(i => i.status === 'PENDING_VERIFICATION') || 
+                       list.find(i => i.status === 'REJECTED') ||
+                       list[list.length - 1];
+        if (active) {
+          setInternshipStatus(active.status);
+          setRejectionReason(active.rejection_reason || null);
+        }
+      } catch (err) {
+        console.warn('Evaluation.js resolve active internship failed:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   const [formData, setFormData] = useState({
     agencyName: '',
     supervisorName: '',
@@ -63,6 +89,77 @@ function Evaluation() {
       </div>
     );
   };
+
+  if (loading) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const isPending = internshipStatus && (internshipStatus.toLowerCase() === 'pending_verification');
+  const isRejected = internshipStatus && (internshipStatus.toLowerCase() === 'rejected');
+
+  if (isPending) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="flex justify-center mb-4">
+              <FaClock className="h-12 w-12 text-yellow-600 animate-pulse" />
+            </div>
+            <h2 className="text-xl font-bold text-yellow-900 mb-2">Training Setup Pending Verification</h2>
+            <p className="text-yellow-700 max-w-md mx-auto">
+              Your training agency and internship details have been submitted and are currently awaiting administrator verification. 
+              You will be able to submit evaluation forms once the setup is approved.
+            </p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (isRejected) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="flex justify-center mb-4">
+              <FaExclamationTriangle className="h-12 w-12 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-red-900 mb-2">Training Setup Rejected</h2>
+            <p className="text-red-700 max-w-md mx-auto mb-4">
+              Your training setup was rejected by the administrator. Please update and resubmit your details under the **Overview** tab.
+            </p>
+            {rejectionReason && (
+              <div className="bg-white border border-red-100 rounded-lg p-4 text-left max-w-md mx-auto shadow-sm">
+                <span className="font-bold text-red-950 block mb-1">Rejection Reason:</span>
+                <p className="text-sm text-red-800 italic">"{rejectionReason}"</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!internshipStatus) {
+    return (
+      <DashboardLayout userRole="student">
+        <div className="max-w-4xl mx-auto mt-8">
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-8 text-center shadow-sm">
+            <h2 className="text-xl font-bold text-gray-800 mb-2">No Active Internship Found</h2>
+            <p className="text-gray-600 max-w-md mx-auto">
+              Please complete and submit your Training Setup form under the **Overview** tab first.
+            </p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout userRole="student">

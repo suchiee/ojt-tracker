@@ -165,7 +165,29 @@ function StudentDashboard() {
           <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-2xl font-bold">Student Dashboard</div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-2xl font-bold">Student Dashboard</span>
+                  {trainingDetails.status?.toUpperCase() === 'ACTIVE' && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-100 border border-green-400/30">
+                      Active
+                    </span>
+                  )}
+                  {trainingDetails.status?.toUpperCase() === 'PENDING_VERIFICATION' && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-100 border border-yellow-400/30 animate-pulse">
+                      Pending Verification
+                    </span>
+                  )}
+                  {trainingDetails.status?.toUpperCase() === 'REJECTED' && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-500/20 text-red-100 border border-red-400/30">
+                      Rejected
+                    </span>
+                  )}
+                  {trainingDetails.status?.toUpperCase() === 'COMPLETED' && (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-100 border border-blue-400/30">
+                      Completed
+                    </span>
+                  )}
+                </div>
                 <div className="text-sm opacity-90 mt-1">
                   Training overview & progress (Supabase V2)
                 </div>
@@ -227,6 +249,12 @@ function StudentDashboard() {
               {/* Progress Overview Card */}
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h2 className="text-xl font-semibold text-gray-800 mb-4">OJT Progress Overview</h2>
+                {trainingDetails.status?.toUpperCase() === 'REJECTED' && trainingDetails.rejectionReason && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm mb-6 shadow-inner">
+                    <span className="font-bold text-red-950 block mb-1">⚠️ Training Setup Rejection Remarks:</span>
+                    <p className="text-red-800 italic">"{trainingDetails.rejectionReason}"</p>
+                  </div>
+                )}
                 <div className="flex flex-col md:flex-row md:items-center mb-6">
                   <div className="flex-1 mb-4 md:mb-0">
                     <div className="flex justify-between mb-1">
@@ -311,6 +339,36 @@ function StudentDashboard() {
                           {dailyLogsCount > 0 
                             ? (trainingDetails.completedHours / dailyLogsCount).toFixed(1) 
                             : 0} hours/day
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <div className="flex items-center">
+                      <FaClipboardCheck className="text-blue-600 mr-3" />
+                      <div>
+                        <div className="text-sm text-gray-600">Training Status</div>
+                        <div className="font-semibold mt-0.5">
+                          {trainingDetails.status?.toUpperCase() === 'ACTIVE' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                              Active
+                            </span>
+                          )}
+                          {trainingDetails.status?.toUpperCase() === 'PENDING_VERIFICATION' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 animate-pulse">
+                              Pending Verification
+                            </span>
+                          )}
+                          {trainingDetails.status?.toUpperCase() === 'REJECTED' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+                              Rejected
+                            </span>
+                          )}
+                          {trainingDetails.status?.toUpperCase() === 'COMPLETED' && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                              Completed
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

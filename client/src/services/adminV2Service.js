@@ -133,6 +133,16 @@ export const removeMentorFromInternship = async (internshipId, mentorUserId) => 
   return response.data;
 };
 
+export const approveInternship = async (internshipId) => {
+  const response = await apiV2.post(`/admin/internships/${internshipId}/approve`);
+  return response.data;
+};
+
+export const rejectInternship = async (internshipId, rejectionReason) => {
+  const response = await apiV2.post(`/admin/internships/${internshipId}/reject`, { rejectionReason });
+  return response.data;
+};
+
 export const getAuditLogs = async (params = {}) => {
   const response = await apiV2.get('/admin/audit-logs', { params });
   return response.data;
@@ -164,7 +174,9 @@ const adminV2Service = {
   updateInternship,
   assignMentorToInternship,
   removeMentorFromInternship,
-  getAuditLogs
+  getAuditLogs,
+  approveInternship,
+  rejectInternship
 };
 
 export default adminV2Service;

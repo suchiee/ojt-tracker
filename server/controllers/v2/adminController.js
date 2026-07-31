@@ -428,6 +428,36 @@ const getAuditLogs = async (req, res) => {
   }
 };
 
+// POST /api/v2/admin/internships/:internshipId/approve
+const approveInternship = async (req, res) => {
+  try {
+    const token = req.supabaseToken;
+    const userId = req.supabaseUser.id;
+    const { internshipId } = req.params;
+    const { facultyUserId } = req.body;
+
+    const internship = await adminService.approveInternship(token, userId, internshipId, facultyUserId);
+    res.status(200).json({ data: internship });
+  } catch (err) {
+    handleControllerError(err, res, 'approveInternship');
+  }
+};
+
+// POST /api/v2/admin/internships/:internshipId/reject
+const rejectInternship = async (req, res) => {
+  try {
+    const token = req.supabaseToken;
+    const userId = req.supabaseUser.id;
+    const { internshipId } = req.params;
+    const { rejectionReason } = req.body;
+
+    const internship = await adminService.rejectInternship(token, userId, internshipId, rejectionReason);
+    res.status(200).json({ data: internship });
+  } catch (err) {
+    handleControllerError(err, res, 'rejectInternship');
+  }
+};
+
 module.exports = {
   getOverview,
   getStudents,
@@ -454,7 +484,9 @@ module.exports = {
   updateInternship,
   assignMentorToInternship,
   removeMentorFromInternship,
-  getAuditLogs
+  getAuditLogs,
+  approveInternship,
+  rejectInternship
 };
 
 
