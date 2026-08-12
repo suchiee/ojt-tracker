@@ -116,7 +116,7 @@ async function run() {
     assert('Status 200', t4.status === 200, `${t4.status}: ${JSON.stringify(t4.data)}`);
     assert('Has internship ID', !!t4.data?.id, t4.data);
     assert('agencyName correct', t4.data?.agencyName === testAgencyName, t4.data?.agencyName);
-    assert('status is active', t4.data?.status === 'active', t4.data?.status);
+    assert('status is PENDING_VERIFICATION', t4.data?.status === 'PENDING_VERIFICATION', t4.data?.status);
     assert('jobRole correct', t4.data?.jobRole === 'Software Intern', t4.data?.jobRole);
     assert('totalHours correct', t4.data?.totalHours === 240, t4.data?.totalHours);
     assert('mentor correct (fallback default)', t4.data?.mentor === 'Assigned by Coordinator', t4.data?.mentor);
