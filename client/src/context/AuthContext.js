@@ -151,6 +151,10 @@ export const AuthProvider = ({ children }) => {
     }
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    if (data?.session) {
+      setSession(data.session);
+      setUser(data.session.user);
+    }
     return data;
   };
 
