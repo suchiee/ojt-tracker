@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import DashboardLayout from '../DashboardLayout';
 import {
   getFacultyReviewQueue,
+  getFacultyAssignedStudents,
   getWeeklyReport,
   getWeeklyReportReviews,
   submitFacultyReview
@@ -43,25 +44,35 @@ const LogStatusBadge = ({ status }) => {
 
 const fmtDate = (d) => {
   if (!d) return '—';
-  const [y, m, day] = d.split('-').map(Number);
-  return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const parts = d.split('-');
+  if (parts.length === 3) {
+    const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  }
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const fmtTs = (ts) => {
   if (!ts) return '—';
-  return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(ts).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
 };
 
-const extractError = (err) =>
-  err?.response?.data?.message || err?.message || 'An unexpected error occurred.';
+const extractError = (err) => {
+  if (err?.response?.data?.message) return err.response.data.message;
+  if (err?.message) return err.message;
+  return 'An unexpected error occurred.';
+};
 
 const Spinner = ({ sm }) => (
-  <div className={`animate-spin rounded-full border-2 border-t-transparent ${sm ? 'h-4 w-4 border-white' : 'h-10 w-10 border-indigo-600'}`} />
+  <div className={`animate-spin rounded-full border-2 border-indigo-500 border-t-transparent ${sm ? 'h-4 w-4' : 'h-8 w-8'}`} />
 );
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 function FacultyDashboard() {
+  const [activeTab, setActiveTab]           = useState('queue'); // 'queue' | 'students'
   const [queue, setQueue]                   = useState([]);
   const [pagination, setPagination]         = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
   const [loading, setLoading]               = useState(true);
@@ -70,6 +81,11 @@ function FacultyDashboard() {
   const [selectedReport, setSelectedReport] = useState(null);
   const [reviews, setReviews]               = useState([]);
   const [detailLoading, setDetailLoading]   = useState(false);
+
+  // Assigned Students state
+  const [students, setStudents]             = useState([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsSearch, setStudentsSearch]   = useState('');
 
   // Review form state
   const [decision, setDecision]             = useState('');
@@ -93,7 +109,27 @@ function FacultyDashboard() {
     }
   }, []);
 
-  useEffect(() => { loadQueue(1); }, [loadQueue]);
+  // ── Load assigned students ────────────────────────────────────────────────
+  const loadStudents = useCallback(async () => {
+    setStudentsLoading(true);
+    setPageError('');
+    try {
+      const res = await getFacultyAssignedStudents({ limit: 100 });
+      setStudents(res?.data || []);
+    } catch (err) {
+      setPageError(extractError(err));
+    } finally {
+      setStudentsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { 
+    if (activeTab === 'queue') {
+      loadQueue(1); 
+    } else if (activeTab === 'students') {
+      loadStudents();
+    }
+  }, [activeTab, loadQueue, loadStudents]);
 
   // ── Open report detail ────────────────────────────────────────────────────
   const openDetail = async (queueItem) => {
@@ -118,33 +154,42 @@ function FacultyDashboard() {
     }
   };
 
-  // ── Submit faculty review ─────────────────────────────────────────────────
+  // ── Submit Review Decision ────────────────────────────────────────────────
   const handleReviewSubmit = async (e) => {
     e.preventDefault();
-    if (!decision) { setReviewError('Please select a decision.'); return; }
+    if (!decision) {
+      setReviewError('Please select a decision.');
+      return;
+    }
     if (decision === 'CORRECTION_REQUESTED' && !remarks.trim()) {
       setReviewError('Remarks are required when requesting a correction.');
       return;
     }
+
     setReviewSubmitting(true);
     setReviewError('');
     setReviewSuccess('');
+
     try {
-      await submitFacultyReview(selectedReport.internship_id, selectedReport.id, {
-        decision,
-        remarks: remarks.trim()
-      });
-      setReviewSuccess(`Review submitted: ${decision === 'APPROVED' ? 'Report approved!' : 'Correction requested.'}`);
-      // Reload detail and remove from queue
-      const [detailRes, reviewsRes] = await Promise.all([
-        getWeeklyReport(selectedReport.internship_id, selectedReport.id),
-        getWeeklyReportReviews(selectedReport.internship_id, selectedReport.id)
-      ]);
-      setSelectedReport(prev => ({ ...detailRes?.data, student: prev.student }));
-      setReviews(reviewsRes?.data || []);
-      setDecision('');
-      setRemarks('');
-      // Reload queue in background
+      const res = await submitFacultyReview(
+        selectedReport.internship_id,
+        selectedReport.id,
+        { decision, remarks: remarks.trim() }
+      );
+
+      setReviewSuccess(
+        decision === 'APPROVED'
+          ? 'Weekly report approved successfully.'
+          : 'Correction requested. The student will be prompted to revise.'
+      );
+
+      // Update local state
+      setSelectedReport(prev => ({ ...prev, status: decision }));
+      if (res?.data) {
+        setReviews(prev => [res.data, ...prev]);
+      }
+
+      // Refresh queue in background
       loadQueue(pagination.page);
     } catch (err) {
       setReviewError(extractError(err));
@@ -157,6 +202,17 @@ function FacultyDashboard() {
   const linkedLogs = selectedReport?.linked_logs || [];
   const unapprovedLogs = linkedLogs.filter(l => l.status !== 'APPROVED');
   const canApprove = unapprovedLogs.length === 0;
+
+  // Filter students based on search query
+  const filteredStudents = students.filter(s => {
+    const q = studentsSearch.toLowerCase();
+    const fullName = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+    const email = (s.email || '').toLowerCase();
+    const studentId = (s.studentIdNumber || '').toLowerCase();
+    const company = (s.companyName || '').toLowerCase();
+    const batch = (s.batchName || '').toLowerCase();
+    return fullName.includes(q) || email.includes(q) || studentId.includes(q) || company.includes(q) || batch.includes(q);
+  });
 
   // ── Detail View ────────────────────────────────────────────────────────────
   if (view === 'detail' && selectedReport) {
@@ -404,22 +460,57 @@ function FacultyDashboard() {
     );
   }
 
-  // ── Queue View ──────────────────────────────────────────────────────────────
+  // ── Main Dashboard View with Tab Navigation ───────────────────────────────
   return (
     <DashboardLayout userRole="coordinator">
-      <div className="max-w-5xl mx-auto space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header and Navigation Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Faculty Review Queue</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Faculty Advisor Dashboard</h1>
             <p className="text-sm text-gray-500 mt-1">
-              Submitted weekly reports from your assigned student batches
+              Supervise student cohorts, monitor internship progress, and review weekly reports
             </p>
           </div>
-          <button onClick={() => loadQueue(1)}
-            className="px-4 py-2 rounded-lg bg-indigo-50 text-indigo-600 text-sm font-medium hover:bg-indigo-100 border border-indigo-200">
-            Refresh
-          </button>
+
+          <div className="flex items-center gap-3">
+            <div className="flex bg-gray-100 p-1 rounded-xl">
+              <button
+                onClick={() => { setActiveTab('queue'); setView('queue'); }}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeTab === 'queue'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Review Queue {queue.length > 0 && (
+                  <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-indigo-100 text-indigo-700">
+                    {queue.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => { setActiveTab('students'); setView('queue'); }}
+                className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  activeTab === 'students'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Assigned Students
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                if (activeTab === 'queue') loadQueue(1);
+                else loadStudents();
+              }}
+              className="px-3.5 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 shadow-sm"
+            >
+              🔄 Refresh
+            </button>
+          </div>
         </div>
 
         {pageError && (
@@ -429,76 +520,199 @@ function FacultyDashboard() {
           </div>
         )}
 
-        {detailLoading && (
-          <div className="flex items-center gap-2 text-sm text-gray-400 p-4">
-            <Spinner sm /> Loading report…
+        {/* ── TAB 1: REVIEW QUEUE ────────────────────────────────────────── */}
+        {activeTab === 'queue' && (
+          <div className="space-y-4">
+            {detailLoading && (
+              <div className="flex items-center gap-2 text-sm text-gray-400 p-4">
+                <Spinner sm /> Loading report…
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex items-center justify-center h-48">
+                <Spinner />
+              </div>
+            ) : queue.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="text-5xl mb-4">📭</div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">Queue is Empty</h3>
+                <p className="text-gray-400 text-sm">No submitted weekly reports awaiting review for your assigned students or batches.</p>
+              </div>
+            ) : (
+              <>
+                <div className="text-sm text-gray-500">
+                  Showing {queue.length} of {pagination.total} reports awaiting review
+                </div>
+                <div className="space-y-3">
+                  {queue.map(item => (
+                    <div
+                      key={item.id}
+                      onClick={() => openDetail(item)}
+                      className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-1 flex-wrap">
+                            <span className="font-semibold text-gray-900 text-sm">
+                              {fmtDate(item.start_date)} — {fmtDate(item.end_date)}
+                            </span>
+                            <StatusBadge status={item.status} />
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            {item.student?.first_name} {item.student?.last_name}
+                            {item.student?.email && <span className="text-gray-400 ml-1">({item.student.email})</span>}
+                          </p>
+                          <div className="flex gap-4 text-xs text-gray-500 mt-1">
+                            <span>🕐 {(item.linked_hours || 0).toFixed(1)} hrs total</span>
+                            <span>✅ {(item.approved_hours || 0).toFixed(1)} mentor-approved</span>
+                          </div>
+                        </div>
+                        <span className="text-indigo-600 font-semibold text-sm shrink-0">Review ›</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {pagination.totalPages > 1 && (
+                  <div className="flex justify-center gap-2 pt-2">
+                    {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map(p => (
+                      <button
+                        key={p}
+                        onClick={() => loadQueue(p)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                          p === pagination.page
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
-        {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <Spinner />
-          </div>
-        ) : queue.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
-            <div className="text-5xl mb-4">📭</div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">Queue is Empty</h3>
-            <p className="text-gray-400 text-sm">No submitted weekly reports awaiting review for your batches.</p>
-          </div>
-        ) : (
-          <>
-            <div className="text-sm text-gray-500">
-              Showing {queue.length} of {pagination.total} reports awaiting review
-            </div>
-            <div className="space-y-3">
-              {queue.map(item => (
-                <div
-                  key={item.id}
-                  onClick={() => openDetail(item)}
-                  className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow cursor-pointer"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-1 flex-wrap">
-                        <span className="font-semibold text-gray-900 text-sm">
-                          {fmtDate(item.start_date)} — {fmtDate(item.end_date)}
-                        </span>
-                        <StatusBadge status={item.status} />
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        {item.student?.first_name} {item.student?.last_name}
-                        {item.student?.email && <span className="text-gray-400 ml-1">({item.student.email})</span>}
-                      </p>
-                      <div className="flex gap-4 text-xs text-gray-500 mt-1">
-                        <span>🕐 {(item.linked_hours || 0).toFixed(1)} hrs total</span>
-                        <span>✅ {(item.approved_hours || 0).toFixed(1)} mentor-approved</span>
-                      </div>
-                    </div>
-                    <span className="text-indigo-400 text-sm shrink-0">Review ›</span>
-                  </div>
-                </div>
-              ))}
+        {/* ── TAB 2: ASSIGNED STUDENTS (READ-ONLY) ────────────────────────── */}
+        {activeTab === 'students' && (
+          <div className="space-y-5">
+            {/* Search & Filter Bar */}
+            <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+              <input
+                type="text"
+                value={studentsSearch}
+                onChange={e => setStudentsSearch(e.target.value)}
+                placeholder="Search by student name, ID, email, company, or batch..."
+                className="w-full sm:w-96 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+              />
+              <span className="text-xs text-gray-500">
+                {filteredStudents.length} {filteredStudents.length === 1 ? 'student' : 'students'} found
+              </span>
             </div>
 
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="flex justify-center gap-2 pt-2">
-                {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => loadQueue(p)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                      p === pagination.page
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
+            {studentsLoading ? (
+              <div className="flex items-center justify-center h-48">
+                <Spinner />
+              </div>
+            ) : filteredStudents.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="text-5xl mb-4">🎓</div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">No Students Found</h3>
+                <p className="text-gray-400 text-sm">
+                  {studentsSearch ? 'No students matched your search criteria.' : 'No students are currently assigned to your supervision.'}
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        <th className="py-3.5 px-4">Student</th>
+                        <th className="py-3.5 px-4">Batch</th>
+                        <th className="py-3.5 px-4">Company & Status</th>
+                        <th className="py-3.5 px-4">Period</th>
+                        <th className="py-3.5 px-4">Hours Rendered</th>
+                        <th className="py-3.5 px-4">Latest Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm">
+                      {filteredStudents.map(stu => {
+                        const progressPct = stu.totalHours > 0 
+                          ? Math.min(100, Math.round((stu.completedHours / stu.totalHours) * 100))
+                          : 0;
+
+                        return (
+                          <tr key={stu.id} className="hover:bg-gray-50/60 transition-colors">
+                            <td className="py-3.5 px-4">
+                              <div className="font-semibold text-gray-900">
+                                {stu.firstName} {stu.lastName}
+                              </div>
+                              <div className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
+                                <span>{stu.email}</span>
+                                {stu.studentIdNumber && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="font-mono">{stu.studentIdNumber}</span>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                {stu.batchName}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="font-medium text-gray-800">{stu.companyName}</div>
+                              <div className="mt-0.5">
+                                <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${
+                                  stu.internshipStatus === 'IN_PROGRESS' || stu.internshipStatus === 'APPROVED'
+                                    ? 'bg-green-50 text-green-700 border border-green-200'
+                                    : stu.internshipStatus === 'COMPLETED'
+                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    : 'bg-gray-50 text-gray-600 border border-gray-200'
+                                }`}>
+                                  {stu.internshipStatus}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 text-xs text-gray-600 whitespace-nowrap">
+                              <div>{fmtDate(stu.startDate)} —</div>
+                              <div className="text-gray-400">{fmtDate(stu.endDate)}</div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-1">
+                                <span>{stu.completedHours.toFixed(1)} / {stu.totalHours} hrs</span>
+                                <span className="text-indigo-600">{progressPct}%</span>
+                              </div>
+                              <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                                  style={{ width: `${progressPct}%` }}
+                                />
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {stu.latestWeeklyReportStatus ? (
+                                <StatusBadge status={stu.latestWeeklyReportStatus} />
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">None</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </DashboardLayout>

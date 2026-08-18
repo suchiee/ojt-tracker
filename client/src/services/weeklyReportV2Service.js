@@ -35,3 +35,8 @@ export const submitFacultyReview = (internshipId, reportId, payload) =>
 // GET /api/v2/faculty/review-queue
 export const getFacultyReviewQueue = (params) =>
   apiV2.get('/faculty/review-queue', { params }).then(res => res.data);
+
+// GET /api/v2/faculty/students
+export const getFacultyAssignedStudents = (params) =>
+  apiV2.get('/faculty/students', { params }).then(res => res.data);
+

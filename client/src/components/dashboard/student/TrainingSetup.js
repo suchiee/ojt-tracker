@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { FaBuilding, FaCalendarAlt, FaBriefcase, FaUser, FaClock } from 'react-icons/fa';
+import { FaBuilding, FaCalendarAlt, FaBriefcase, FaUser, FaClock, FaEnvelope } from 'react-icons/fa';
 
 function TrainingSetup({ onSubmit }) {
   const [agency, setAgency] = useState('');
   const [mentor, setMentor] = useState('');
+  const [mentorEmail, setMentorEmail] = useState('');
   const [jobRole, setJobRole] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -13,8 +14,14 @@ function TrainingSetup({ onSubmit }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    if (!agency || !mentor || !jobRole || !startDate || !endDate || !totalHours) {
+    if (!agency || !mentor || !mentorEmail || !jobRole || !startDate || !endDate || !totalHours) {
       setError('Please fill in all fields');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(mentorEmail.trim())) {
+      setError('Please enter a valid mentor email address');
       return;
     }
 
@@ -32,6 +39,8 @@ function TrainingSetup({ onSubmit }) {
     const data = {
       agencyName: agency,
       mentor,
+      mentorName: mentor,
+      mentorEmail: mentorEmail.trim().toLowerCase(),
       jobRole,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
@@ -79,7 +88,7 @@ function TrainingSetup({ onSubmit }) {
         {/* Mentor Name */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Mentor Name
+            Company Mentor Name
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -88,12 +97,33 @@ function TrainingSetup({ onSubmit }) {
             <input
               type="text"
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter your mentor's name"
+              placeholder="Enter your company mentor's full name"
               value={mentor}
               onChange={(e) => setMentor(e.target.value)}
               required
             />
           </div>
+        </div>
+
+        {/* Mentor Email */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Company Mentor Email
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <FaEnvelope className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+              type="email"
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Enter your company mentor's email address"
+              value={mentorEmail}
+              onChange={(e) => setMentorEmail(e.target.value)}
+              required
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">Your mentor will receive an invitation to review your daily logs once your training setup is approved.</p>
         </div>
 
         {/* Job Role */}

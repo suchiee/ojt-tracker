@@ -38,6 +38,21 @@ const validateTrainingSetupBody = (req, res, next) => {
   }
   req.body.mentor = trimmedMentor;
 
+  // 2b. mentorEmail validation
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (req.body.mentorEmail !== undefined && req.body.mentorEmail !== null) {
+    if (typeof req.body.mentorEmail !== 'string') {
+      return res.status(400).json({ message: 'Invalid request: mentorEmail must be a string' });
+    }
+    const trimmedEmail = req.body.mentorEmail.trim().toLowerCase();
+    if (trimmedEmail !== '' && !EMAIL_REGEX.test(trimmedEmail)) {
+      return res.status(400).json({ message: 'Invalid request: mentorEmail must be a valid email address' });
+    }
+    req.body.mentorEmail = trimmedEmail || null;
+  } else {
+    req.body.mentorEmail = null;
+  }
+
   // 3. jobRole validation
   if (jobRole === undefined || jobRole === null || typeof jobRole !== 'string') {
     return res.status(400).json({ message: 'Invalid request: jobRole is required and must be a string' });

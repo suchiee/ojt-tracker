@@ -15,6 +15,7 @@ import {
   createBatch,
   provisionStudent,
   provisionFaculty,
+  inviteFacultyUser,
   assignFacultyToBatch,
   approveInternship,
   rejectInternship
@@ -36,8 +37,7 @@ import {
   FaBriefcase,
   FaEye,
   FaSync,
-  FaCheck,
-  FaCommentAlt
+  FaCheck
 } from 'react-icons/fa';
 
 function AdminDashboard() {
@@ -106,6 +106,7 @@ function AdminDashboard() {
   const [facEmail, setFacEmail] = useState('');
   const [facFirstName, setFacFirstName] = useState('');
   const [facLastName, setFacLastName] = useState('');
+  const [facBatchId, setFacBatchId] = useState('');
 
   const [deptName, setDeptName] = useState('');
   const [progDeptId, setProgDeptId] = useState('');
@@ -261,18 +262,21 @@ function AdminDashboard() {
     setSubmittingModal(true);
     setErrorMsg('');
     try {
-      await provisionFaculty({
+      const activeTenantId = profile?.memberships?.[0]?.tenantId || academicStructure?.[0]?.id || '33364575-39ec-4eef-a435-cf973f2a587d';
+      await inviteFacultyUser({
         email: facEmail,
         first_name: facFirstName,
-        last_name: facLastName
+        last_name: facLastName,
+        tenant_id: activeTenantId,
+        batch_id: facBatchId || null
       });
-      setSuccessMsg(`Faculty Advisor "${facFirstName} ${facLastName}" provisioned successfully.`);
+      setSuccessMsg(`Invitation sent to Faculty Advisor "${facFirstName} ${facLastName}".`);
       setShowFacultyModal(false);
-      setFacEmail(''); setFacFirstName(''); setFacLastName('');
+      setFacEmail(''); setFacFirstName(''); setFacLastName(''); setFacBatchId('');
       fetchFaculty();
       fetchOverview();
     } catch (err) {
-      setErrorMsg(err.response?.data?.message || 'Failed to provision faculty.');
+      setErrorMsg(err.response?.data?.message || 'Failed to invite faculty advisor.');
     } finally {
       setSubmittingModal(false);
     }
@@ -830,7 +834,7 @@ function AdminDashboard() {
                 onClick={() => setShowFacultyModal(true)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition shadow-sm flex items-center space-x-1.5"
               >
-                <FaPlus /> <span>Provision Faculty</span>
+                <FaPlus /> <span>Invite Faculty</span>
               </button>
             </div>
           </div>
@@ -918,6 +922,11 @@ function AdminDashboard() {
                         Company: <strong className="text-gray-900">{item.company_name}</strong> | Role: <strong className="text-gray-900">{item.job_role}</strong>
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">Timeline: {item.start_date} to {item.end_date} ({item.required_hours} hrs)</p>
+                      {(item.mentor_name || item.mentor_email) && (
+                        <p className="text-xs text-blue-800 mt-1">
+                          Company Mentor: <strong className="text-gray-900">{item.mentor_name || 'Not provided'}</strong> {item.mentor_email && <span className="text-gray-600">({item.mentor_email})</span>}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center space-x-2">
@@ -1202,6 +1211,12 @@ function AdminDashboard() {
               <p><strong>Student:</strong> {approvalModalItem.student?.first_name} {approvalModalItem.student?.last_name}</p>
               <p><strong>Company:</strong> {approvalModalItem.company_name}</p>
               <p><strong>Role:</strong> {approvalModalItem.job_role}</p>
+              {approvalModalItem.mentor_email && (
+                <p className="text-blue-900 bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                  <strong>Company Mentor:</strong> {approvalModalItem.mentor_name || 'Mentor'} ({approvalModalItem.mentor_email})
+                  <span className="block text-xs text-blue-700 mt-0.5">Approval will link an existing mentor account or dispatch an invitation email.</span>
+                </p>
+              )}
             </div>
 
             <form onSubmit={handleConfirmApproval} className="space-y-4">
@@ -1320,6 +1335,7 @@ function AdminDashboard() {
               <p><strong>Student:</strong> {selectedInternshipDetail.student?.first_name} {selectedInternshipDetail.student?.last_name} ({selectedInternshipDetail.student?.email})</p>
               <p><strong>Company:</strong> {selectedInternshipDetail.company_name}</p>
               <p><strong>Job Role:</strong> {selectedInternshipDetail.job_role}</p>
+              <p><strong>Company Mentor:</strong> {selectedInternshipDetail.mentor_name || 'Not provided'} {selectedInternshipDetail.mentor_email && `(${selectedInternshipDetail.mentor_email})`}</p>
               <p><strong>Timeline:</strong> {selectedInternshipDetail.start_date} to {selectedInternshipDetail.end_date}</p>
               <p><strong>Target Hours:</strong> {selectedInternshipDetail.required_hours} hrs</p>
               <p><strong>Status:</strong> <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-bold">{selectedInternshipDetail.status}</span></p>
@@ -1380,12 +1396,12 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* Provision Faculty Modal */}
+      {/* Invite Faculty Modal */}
       {showFacultyModal && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Provision Faculty Advisor</h3>
+              <h3 className="text-lg font-bold text-gray-900">Invite Faculty Advisor</h3>
               <button onClick={() => setShowFacultyModal(false)} className="text-gray-400 hover:text-gray-700"><FaTimes /></button>
             </div>
             <form onSubmit={handleProvisionFaculty} className="space-y-4">
@@ -1403,10 +1419,19 @@ function AdminDashboard() {
                   <input type="text" required value={facLastName} onChange={e => setFacLastName(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm" placeholder="Kulkarni" />
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Assign to Batch (Optional)</label>
+                <select value={facBatchId} onChange={e => setFacBatchId(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm">
+                  <option value="">No immediate batch assignment</option>
+                  {batchOptions.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button type="button" onClick={() => setShowFacultyModal(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold">Cancel</button>
                 <button type="submit" disabled={submittingModal} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">
-                  {submittingModal ? 'Provisioning...' : 'Provision'}
+                  {submittingModal ? 'Sending Invite...' : 'Send Invitation'}
                 </button>
               </div>
             </form>
@@ -1414,89 +1439,7 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* Create Department Modal */}
-      {showDeptModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100">
-            <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Add Department</h3>
-              <button onClick={() => setShowDeptModal(false)} className="text-gray-400 hover:text-gray-700"><FaTimes /></button>
-            </div>
-            <form onSubmit={handleCreateDepartment} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Department Name</label>
-                <input type="text" required value={deptName} onChange={e => setDeptName(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm" placeholder="Department of Computer Science" />
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setShowDeptModal(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold">Cancel</button>
-                <button type="submit" disabled={submittingModal} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">Create</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* Create Program Modal */}
-      {showProgModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100">
-            <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Add Program</h3>
-              <button onClick={() => setShowProgModal(false)} className="text-gray-400 hover:text-gray-700"><FaTimes /></button>
-            </div>
-            <form onSubmit={handleCreateProgram} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Department</label>
-                <select required value={progDeptId} onChange={e => setProgDeptId(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm">
-                  <option value="">Select Department</option>
-                  {academicStructure.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Program Name</label>
-                <input type="text" required value={progName} onChange={e => setProgName(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm" placeholder="M.Sc. Computer Science" />
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setShowProgModal(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold">Cancel</button>
-                <button type="submit" disabled={submittingModal} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700">Create</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Create Batch Modal */}
-      {showBatchModal && (
-        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100">
-            <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Add Batch</h3>
-              <button onClick={() => setShowBatchModal(false)} className="text-gray-400 hover:text-gray-700"><FaTimes /></button>
-            </div>
-            <form onSubmit={handleCreateBatch} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Program</label>
-                <select required value={batchProgId} onChange={e => setBatchProgId(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm">
-                  <option value="">Select Program</option>
-                  {academicStructure.flatMap(d => d.programs || []).map(p => (
-                    <option key={p.program_id} value={p.program_id}>{p.program_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Batch Name</label>
-                <input type="text" required value={batchName} onChange={e => setBatchName(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm" placeholder="M.Sc. Computer Science 2024-2026" />
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button type="button" onClick={() => setShowBatchModal(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl text-xs font-bold">Cancel</button>
-                <button type="submit" disabled={submittingModal} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">Create</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Assign Faculty to Batch Modal */}
       {showAssignFacultyModal && (

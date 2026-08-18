@@ -133,13 +133,18 @@ export const removeMentorFromInternship = async (internshipId, mentorUserId) => 
   return response.data;
 };
 
-export const approveInternship = async (internshipId) => {
-  const response = await apiV2.post(`/admin/internships/${internshipId}/approve`);
+export const approveInternship = async (internshipId, facultyUserId) => {
+  const response = await apiV2.post(`/admin/internships/${internshipId}/approve`, { facultyUserId });
   return response.data;
 };
 
 export const rejectInternship = async (internshipId, rejectionReason) => {
   const response = await apiV2.post(`/admin/internships/${internshipId}/reject`, { rejectionReason });
+  return response.data;
+};
+
+export const inviteFacultyUser = async (data) => {
+  const response = await apiV2.post('/auth/admin/invite', { ...data, invitation_type: 'FACULTY_INVITE' });
   return response.data;
 };
 

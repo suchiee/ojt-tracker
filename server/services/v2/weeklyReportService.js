@@ -600,7 +600,9 @@ const getFacultyReviewQueue = async (token, userId, queryParams) => {
 
     let whereClause = `
       WHERE wr.status = 'SUBMITTED'
-        AND fba.faculty_user_id = auth.uid()
+        AND tm_fac.user_id = auth.uid()
+        AND mr_fac.role = 'FACULTY_MENTOR'
+        AND (fba.id IS NOT NULL OR ima.id IS NOT NULL)
     `;
     const params = [limit, offset];
     let paramIndex = 3;
@@ -643,9 +645,12 @@ const getFacultyReviewQueue = async (token, userId, queryParams) => {
       FROM public.weekly_reports wr
       JOIN public.internships i ON wr.internship_id = i.id
       JOIN public.users u ON i.student_id = u.id
-      JOIN public.tenant_memberships tm ON u.id = tm.user_id
-      JOIN public.student_profiles sp ON tm.id = sp.tenant_membership_id
-      JOIN public.faculty_batch_assignments fba ON sp.batch_id = fba.batch_id
+      JOIN public.tenant_memberships tm_fac ON i.tenant_id = tm_fac.tenant_id
+      JOIN public.membership_roles mr_fac ON tm_fac.id = mr_fac.membership_id
+      LEFT JOIN public.tenant_memberships tm_stu ON u.id = tm_stu.user_id AND tm_stu.tenant_id = i.tenant_id
+      LEFT JOIN public.student_profiles sp ON tm_stu.id = sp.tenant_membership_id
+      LEFT JOIN public.faculty_batch_assignments fba ON sp.batch_id = fba.batch_id AND fba.faculty_user_id = auth.uid()
+      LEFT JOIN public.internship_mentor_assignments ima ON i.id = ima.internship_id AND ima.mentor_user_id = auth.uid() AND ima.mentor_type = 'FACULTY'
       ${whereClause}
       ORDER BY wr.start_date DESC
       LIMIT $1 OFFSET $2
@@ -655,7 +660,9 @@ const getFacultyReviewQueue = async (token, userId, queryParams) => {
     let countParamIndex = 1;
     let countWhere = `
       WHERE wr.status = 'SUBMITTED'
-        AND fba.faculty_user_id = auth.uid()
+        AND tm_fac.user_id = auth.uid()
+        AND mr_fac.role = 'FACULTY_MENTOR'
+        AND (fba.id IS NOT NULL OR ima.id IS NOT NULL)
     `;
     if (student_id) {
       countWhere += ` AND i.student_id = $${countParamIndex}`;
@@ -675,9 +682,12 @@ const getFacultyReviewQueue = async (token, userId, queryParams) => {
       FROM public.weekly_reports wr
       JOIN public.internships i ON wr.internship_id = i.id
       JOIN public.users u ON i.student_id = u.id
-      JOIN public.tenant_memberships tm ON u.id = tm.user_id
-      JOIN public.student_profiles sp ON tm.id = sp.tenant_membership_id
-      JOIN public.faculty_batch_assignments fba ON sp.batch_id = fba.batch_id
+      JOIN public.tenant_memberships tm_fac ON i.tenant_id = tm_fac.tenant_id
+      JOIN public.membership_roles mr_fac ON tm_fac.id = mr_fac.membership_id
+      LEFT JOIN public.tenant_memberships tm_stu ON u.id = tm_stu.user_id AND tm_stu.tenant_id = i.tenant_id
+      LEFT JOIN public.student_profiles sp ON tm_stu.id = sp.tenant_membership_id
+      LEFT JOIN public.faculty_batch_assignments fba ON sp.batch_id = fba.batch_id AND fba.faculty_user_id = auth.uid()
+      LEFT JOIN public.internship_mentor_assignments ima ON i.id = ima.internship_id AND ima.mentor_user_id = auth.uid() AND ima.mentor_type = 'FACULTY'
       ${countWhere}
     `;
 

@@ -17,7 +17,9 @@ const formatTrainingPayload = (internship, mentorName) => {
   return {
     id: internship.id,
     agencyName: internship.company_name || (internship.companies && internship.companies.name) || 'Not specified',
-    mentor: mentorName || 'Assigned by Coordinator',
+    mentor: mentorName || internship.mentor_name || 'Assigned by Coordinator',
+    mentorName: internship.mentor_name || mentorName || null,
+    mentorEmail: internship.mentor_email || null,
     jobRole: internship.job_role,
     startDate: internship.start_date,
     endDate: internship.end_date,
@@ -38,11 +40,11 @@ const getTrainingSetupData = async (token, userId) => {
     const { data: internships, error: internshipError } = await client
       .from('internships')
       .select(`
-        id, job_role, start_date, end_date, total_hours, status, rejection_reason,
+        id, job_role, start_date, end_date, total_hours, status, rejection_reason, mentor_name, mentor_email,
         companies(id, name),
         internship_mentor_assignments(
           mentor_type,
-          users:mentor_user_id(first_name, last_name)
+          users:mentor_user_id(first_name, last_name, email)
         )
       `)
       .eq('student_id', userId);
@@ -57,7 +59,7 @@ const getTrainingSetupData = async (token, userId) => {
     }
 
     // Resolve mentor name
-    let mentorName = 'Assigned by Coordinator';
+    let mentorName = active.mentor_name || 'Assigned by Coordinator';
     if (active.internship_mentor_assignments && active.internship_mentor_assignments.length > 0) {
       const companyMentor = active.internship_mentor_assignments.find(a => a.mentor_type === 'COMPANY');
       if (companyMentor && companyMentor.users) {
@@ -99,8 +101,9 @@ const getTrainingSetupData = async (token, userId) => {
     const sql = `
       SELECT 
         i.id, i.job_role, i.start_date, i.end_date, i.total_hours, i.status, i.rejection_reason,
+        i.mentor_name, i.mentor_email,
         c.name AS company_name,
-        mu.first_name AS mentor_first, mu.last_name AS mentor_last,
+        mu.first_name AS mentor_first, mu.last_name AS mentor_last, mu.email AS assigned_mentor_email,
         COALESCE(hs.approved_hours, 0)::float AS completed_hours,
         COALESCE(hs.logged_hours, 0)::float AS logged_hours
       FROM internships i
@@ -119,7 +122,7 @@ const getTrainingSetupData = async (token, userId) => {
     if (rows.length === 0) return null;
     const dbRow = rows[0];
 
-    let mentorName = 'Assigned by Coordinator';
+    let mentorName = dbRow.mentor_name || 'Assigned by Coordinator';
     if (dbRow.mentor_first || dbRow.mentor_last) {
       mentorName = `${dbRow.mentor_first || ''} ${dbRow.mentor_last || ''}`.trim();
     }
@@ -135,7 +138,9 @@ const getTrainingSetupData = async (token, userId) => {
 
 // ── UPDATE/CREATE TRAINING DETAILS ───────────────────────────────────────────
 const updateTrainingSetupData = async (token, userId, body) => {
-  const { agencyName, mentor, jobRole, startDate, endDate, totalHours } = body;
+  const { agencyName, mentor, mentorEmail, jobRole, startDate, endDate, totalHours } = body;
+  const normalizedMentorName = (mentor || body.mentorName || '').trim() || null;
+  const normalizedMentorEmail = (mentorEmail || '').trim().toLowerCase() || null;
 
   const client = await pool.connect();
   try {
@@ -199,7 +204,7 @@ const updateTrainingSetupData = async (token, userId, body) => {
     } else if (activeIntRows.length === 1) {
       // Fetch details before update to log state transition
       const { rows: [prevDetails] } = await client.query(
-        `SELECT id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason FROM internships WHERE id = $1`,
+        `SELECT id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason, mentor_name, mentor_email FROM internships WHERE id = $1`,
         [activeIntRows[0].id]
       );
       beforeState = prevDetails;
@@ -208,16 +213,35 @@ const updateTrainingSetupData = async (token, userId, body) => {
       internshipId = activeIntRows[0].id;
       const updateSql = `
         UPDATE internships 
-        SET company_id = $1, job_role = $2, start_date = $3, end_date = $4, total_hours = $5, status = 'PENDING_VERIFICATION', rejection_reason = NULL 
-        WHERE id = $6;
+        SET company_id = $1, job_role = $2, start_date = $3, end_date = $4, total_hours = $5, 
+            status = 'PENDING_VERIFICATION', rejection_reason = NULL,
+            mentor_name = $6, mentor_email = $7 
+        WHERE id = $8;
       `;
-      await client.query(updateSql, [companyId, jobRole, startDate, endDate, totalHours, internshipId]);
+      await client.query(updateSql, [
+        companyId, jobRole, startDate, endDate, totalHours,
+        normalizedMentorName, normalizedMentorEmail,
+        internshipId
+      ]);
+
+      // If mentor email changed, revoke previous pending unused invitations for this internship
+      if (prevDetails.mentor_email && prevDetails.mentor_email !== normalizedMentorEmail) {
+        await client.query(`
+          UPDATE invitation_codes 
+          SET revoked_at = now() 
+          WHERE internship_id = $1 AND uses_count = 0 AND revoked_at IS NULL;
+        `, [internshipId]);
+      }
+
       auditAction = 'STUDENT_RESUBMIT_SETUP';
     } else {
       // Create new internship in PENDING_VERIFICATION status
       const insertIntSql = `
-        INSERT INTO internships (tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING_VERIFICATION', NULL)
+        INSERT INTO internships (
+          tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, 
+          status, rejection_reason, mentor_name, mentor_email
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING_VERIFICATION', NULL, $8, $9)
         RETURNING id;
       `;
       const { rows: newIntRows } = await client.query(insertIntSql, [
@@ -227,7 +251,9 @@ const updateTrainingSetupData = async (token, userId, body) => {
         jobRole,
         startDate,
         endDate,
-        totalHours
+        totalHours,
+        normalizedMentorName,
+        normalizedMentorEmail
       ]);
       internshipId = newIntRows[0].id;
       auditAction = 'STUDENT_SUBMIT_SETUP';
@@ -243,7 +269,16 @@ const updateTrainingSetupData = async (token, userId, body) => {
       auditAction,
       internshipId,
       beforeState ? JSON.stringify(beforeState) : null,
-      JSON.stringify({ company_id: companyId, job_role: jobRole, start_date: startDate, end_date: endDate, total_hours: totalHours, status: 'PENDING_VERIFICATION' })
+      JSON.stringify({ 
+        company_id: companyId, 
+        job_role: jobRole, 
+        start_date: startDate, 
+        end_date: endDate, 
+        total_hours: totalHours, 
+        status: 'PENDING_VERIFICATION',
+        mentor_name: normalizedMentorName,
+        mentor_email: normalizedMentorEmail
+      })
     ]);
 
     await client.query('COMMIT');

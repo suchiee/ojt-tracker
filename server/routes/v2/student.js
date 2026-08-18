@@ -14,6 +14,7 @@ router.post('/profile', verifySupabaseAuth, updateStudentProfile);
 // Training Setup
 router.get('/training', verifySupabaseAuth, getTrainingSetup);
 router.post('/training', verifySupabaseAuth, validateTrainingSetupBody, updateTrainingSetup);
+router.put('/training', verifySupabaseAuth, validateTrainingSetupBody, updateTrainingSetup);
 router.patch('/training', verifySupabaseAuth, validateTrainingSetupBody, updateTrainingSetup);
 
 module.exports = router;

@@ -1,7 +1,8 @@
 // Service: Phase 1G.5 Tenant Admin V2 Service
 // Provides tenant-scoped read services for Tenant Admins using PostgreSQL RLS & session authorization.
 
-const { createUserContextClient } = require('../../config/supabase');
+const crypto = require('crypto');
+const { createUserContextClient, getAdminClient } = require('../../config/supabase');
 const pool = require('../../config/pgPool');
 
 const USE_SUPABASE_CLIENT = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) && process.env.LOCAL_JWT_DEV_MODE !== 'true';
@@ -360,6 +361,8 @@ const getAdminStudentDetail = async (token, userId, studentId) => {
         i.status,
         i.start_date,
         i.end_date,
+        i.mentor_name,
+        i.mentor_email,
         i.total_hours as required_hours,
         c.name as company_name,
         COALESCE(hours.approved_hours, 0) as approved_hours,
@@ -393,6 +396,8 @@ const getAdminStudentDetail = async (token, userId, studentId) => {
         status: r.status,
         start_date: r.start_date,
         end_date: r.end_date,
+        mentor_name: r.mentor_name || null,
+        mentor_email: r.mentor_email || null,
         required_hours: r.required_hours,
         approved_hours: parseFloat(r.approved_hours || 0),
         logged_hours: parseFloat(r.logged_hours || 0)
@@ -457,6 +462,8 @@ const getAdminInternships = async (token, userId, queryParams) => {
         i.start_date,
         i.end_date,
         i.status,
+        i.mentor_name,
+        i.mentor_email,
         i.total_hours as required_hours,
         COALESCE(hours.approved_hours, 0) as approved_hours,
         COALESCE(hours.logged_hours, 0) as logged_hours
@@ -498,6 +505,8 @@ const getAdminInternships = async (token, userId, queryParams) => {
       start_date: r.start_date,
       end_date: r.end_date,
       status: r.status,
+      mentor_name: r.mentor_name || null,
+      mentor_email: r.mentor_email || null,
       required_hours: r.required_hours,
       approved_hours: parseFloat(r.approved_hours || 0),
       logged_hours: parseFloat(r.logged_hours || 0)
@@ -1506,7 +1515,7 @@ const approveInternship = async (token, userId, internshipId, facultyUserId) => 
     await activateRlsSession(client, userId);
 
     const { rows: [existing] } = await client.query(
-      `SELECT id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason FROM internships WHERE id = $1 AND tenant_id = $2`,
+      `SELECT id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason, mentor_name, mentor_email FROM internships WHERE id = $1 AND tenant_id = $2`,
       [internshipId, adminCtx.tenant_id]
     );
     if (!existing) {
@@ -1531,10 +1540,11 @@ const approveInternship = async (token, userId, internshipId, facultyUserId) => 
         status = 'ACTIVE',
         rejection_reason = NULL
        WHERE id = $1 AND tenant_id = $2
-       RETURNING id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason, created_at`,
+       RETURNING id, tenant_id, student_id, company_id, job_role, start_date, end_date, total_hours, status, rejection_reason, mentor_name, mentor_email, created_at`,
       [internshipId, adminCtx.tenant_id]
     );
 
+    // 1. Handle Faculty Mentor linkage if provided
     if (facultyUserId) {
       const { rows: [facCheck] } = await client.query(
         `SELECT id FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2`,
@@ -1547,6 +1557,101 @@ const approveInternship = async (token, userId, internshipId, facultyUserId) => 
            ON CONFLICT (internship_id, mentor_user_id) DO UPDATE SET is_primary = true`,
           [internshipId, facultyUserId]
         );
+      }
+    }
+
+    // 2. Handle Company Mentor linkage or invitation
+    if (existing.mentor_email && existing.mentor_email.trim()) {
+      const normalizedMentorEmail = existing.mentor_email.trim().toLowerCase();
+
+      // Check if user exists in public.users
+      const { rows: [existingUser] } = await client.query(
+        `SELECT id, email FROM public.users WHERE LOWER(email) = $1`,
+        [normalizedMentorEmail]
+      );
+
+      if (existingUser) {
+        // User exists: Check their roles in this tenant
+        const { rows: roleRows } = await client.query(
+          `SELECT mr.role FROM public.tenant_memberships tm
+           JOIN public.membership_roles mr ON tm.id = mr.membership_id
+           WHERE tm.user_id = $1 AND tm.tenant_id = $2`,
+          [existingUser.id, adminCtx.tenant_id]
+        );
+        const roles = roleRows.map(r => r.role);
+
+        if (roles.includes('COMPANY_MENTOR')) {
+          // Case A — Existing Mentor: immediately create assignment
+          await client.query(
+            `INSERT INTO public.internship_mentor_assignments (internship_id, mentor_user_id, mentor_type, is_primary)
+             VALUES ($1, $2, 'COMPANY', true)
+             ON CONFLICT (internship_id, mentor_user_id) DO UPDATE SET is_primary = true`,
+            [internshipId, existingUser.id]
+          );
+
+          await logAdminAudit(
+            client,
+            adminCtx.tenant_id,
+            userId,
+            'COMPANY_MENTOR_ASSIGNED',
+            'internship_mentor_assignments',
+            internshipId,
+            null,
+            { internship_id: internshipId, mentor_user_id: existingUser.id, mentor_type: 'COMPANY' }
+          );
+        } else {
+          // Case B — Existing User But Not Company Mentor: throw error requiring explicit resolution
+          const err = new Error(`Cannot assign mentor: User with email "${existing.mentor_email}" already exists with role(s) [${roles.join(', ')}] and is not a Company Mentor.`);
+          err.status = 400;
+          throw err;
+        }
+      } else {
+        // Case C — New Mentor: generate invitation scoped to this specific internship
+        // Check if there is already an active unconsumed invitation
+        const { rows: [existingInvite] } = await client.query(
+          `SELECT id FROM public.invitation_codes 
+           WHERE internship_id = $1 AND invitation_type = 'COMPANY_MENTOR_INVITE' 
+             AND revoked_at IS NULL AND expires_at > now() AND uses_count = 0`,
+          [internshipId]
+        );
+
+        if (!existingInvite) {
+          const rawToken = crypto.randomBytes(24).toString('hex');
+          const codeHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 7);
+
+          await client.query(
+            `INSERT INTO public.invitation_codes (
+               code_hash, tenant_id, internship_id, invitation_type, intended_email,
+               max_uses, uses_count, expires_at, created_by
+             ) VALUES ($1, $2, $3, 'COMPANY_MENTOR_INVITE', $4, 1, 0, $5, $6)`,
+            [codeHash, adminCtx.tenant_id, internshipId, normalizedMentorEmail, expiresAt.toISOString(), userId]
+          );
+
+          // If Supabase Auth is active, trigger email invitation
+          if (USE_SUPABASE_CLIENT) {
+            try {
+              const adminSupabase = getAdminClient();
+              await adminSupabase.auth.admin.inviteUserByEmail(normalizedMentorEmail, {
+                data: { first_name: existing.mentor_name || 'Mentor' }
+              });
+            } catch (supErr) {
+              console.warn('[ADMIN APPROVE] Supabase email invite warning:', supErr.message);
+            }
+          }
+
+          await logAdminAudit(
+            client,
+            adminCtx.tenant_id,
+            userId,
+            'COMPANY_MENTOR_INVITED',
+            'invitation_codes',
+            internshipId,
+            null,
+            { internship_id: internshipId, intended_email: normalizedMentorEmail, invitation_type: 'COMPANY_MENTOR_INVITE' }
+          );
+        }
       }
     }
 
