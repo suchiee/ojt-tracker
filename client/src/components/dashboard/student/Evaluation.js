@@ -2,32 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { FaStar, FaClock, FaExclamationTriangle } from 'react-icons/fa';
 import DashboardLayout from '../DashboardLayout';
 import { getInternships } from '../../../services/internshipV2Service';
+import { getEvaluation, submitEvaluation } from '../../../services/evaluationService';
 
 function Evaluation() {
+  const [internshipId, setInternshipId] = useState(null);
   const [internshipStatus, setInternshipStatus] = useState(null);
   const [rejectionReason, setRejectionReason] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await getInternships();
-        const list = res?.data || [];
-        const active = list.find(i => i.status === 'ACTIVE') || 
-                       list.find(i => i.status === 'PENDING_VERIFICATION') || 
-                       list.find(i => i.status === 'REJECTED') ||
-                       list[list.length - 1];
-        if (active) {
-          setInternshipStatus(active.status);
-          setRejectionReason(active.rejection_reason || null);
-        }
-      } catch (err) {
-        console.warn('Evaluation.js resolve active internship failed:', err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     agencyName: '',
@@ -45,6 +28,42 @@ function Evaluation() {
     improvements: '',
     additionalComments: ''
   });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getInternships();
+        const list = res?.data || [];
+        const active = list.find(i => i.status === 'ACTIVE') || 
+                       list.find(i => i.status === 'PENDING_VERIFICATION') || 
+                       list.find(i => i.status === 'REJECTED') ||
+                       list[list.length - 1];
+        if (active) {
+          setInternshipId(active.id);
+          setInternshipStatus(active.status);
+          setRejectionReason(active.rejection_reason || null);
+
+          // If active is approved/active, check if evaluation already exists
+          if (active.status === 'ACTIVE') {
+            try {
+              const evalData = await getEvaluation(active.id);
+              if (evalData && evalData.data) {
+                setFormData(evalData.data);
+                setSubmitted(true);
+              }
+            } catch (evalErr) {
+              // 404 is expected if not submitted yet
+              console.log('No existing evaluation found:', evalErr.message || evalErr);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Evaluation.js resolve active internship failed:', err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -64,11 +83,33 @@ function Evaluation() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Here you would submit the form data to your backend
-    console.log('Form submitted:', formData);
-    alert('Evaluation submitted successfully!');
+    setError('');
+
+    // Form validation checks
+    if (!formData.agencyName.trim() || !formData.supervisorName.trim() || !formData.trainingPeriod.trim()) {
+      setError('Please fill in all agency information fields.');
+      return;
+    }
+
+    const { ratings } = formData;
+    const ratingKeys = ['workEnvironment', 'supervision', 'learningOpportunities', 'skillDevelopment', 'communication', 'overallExperience'];
+    for (const key of ratingKeys) {
+      if (ratings[key] < 1 || ratings[key] > 5) {
+        setError('Please provide a rating for all listed aspects.');
+        return;
+      }
+    }
+
+    try {
+      await submitEvaluation(internshipId, formData);
+      setSubmitted(true);
+      window.scrollTo(0, 0);
+    } catch (err) {
+      console.error('Submit evaluation error:', err);
+      setError(err.response?.data?.message || err.message || 'Failed to submit evaluation');
+    }
   };
 
   const RatingStars = ({ category, value }) => {
@@ -78,10 +119,11 @@ function Evaluation() {
           <button
             key={star}
             type="button"
-            className={`text-2xl focus:outline-none ${
+            className={`text-2xl focus:outline-none transition-transform duration-100 ${
               star <= value ? 'text-yellow-400' : 'text-gray-300'
-            }`}
-            onClick={() => handleRatingChange(category, star)}
+            } ${submitted ? 'cursor-default' : 'hover:scale-110'}`}
+            disabled={submitted}
+            onClick={() => !submitted && handleRatingChange(category, star)}
           >
             <FaStar />
           </button>
@@ -170,6 +212,20 @@ function Evaluation() {
             Please provide your honest feedback about your OJT experience. Your responses will help improve the program for future students.
           </p>
 
+          {submitted && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800">
+              <p className="font-semibold text-lg">✓ Evaluation Submitted Successfully</p>
+              <p className="text-sm text-green-700 mt-1">Thank you for your feedback! Your evaluation response has been securely persisted in the database.</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
+              <p className="font-semibold">Error Submitting Evaluation</p>
+              <p className="text-sm text-red-700 mt-1">{error}</p>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Agency Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -182,8 +238,9 @@ function Evaluation() {
                   name="agencyName"
                   value={formData.agencyName}
                   onChange={handleInputChange}
-                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
                   required
+                  disabled={submitted}
                 />
               </div>
               <div>
@@ -195,8 +252,9 @@ function Evaluation() {
                   name="supervisorName"
                   value={formData.supervisorName}
                   onChange={handleInputChange}
-                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
                   required
+                  disabled={submitted}
                 />
               </div>
               <div className="md:col-span-2">
@@ -209,8 +267,9 @@ function Evaluation() {
                   value={formData.trainingPeriod}
                   onChange={handleInputChange}
                   placeholder="e.g., January 2023 - June 2023"
-                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
                   required
+                  disabled={submitted}
                 />
               </div>
             </div>
@@ -292,7 +351,8 @@ function Evaluation() {
                   value={formData.strengths}
                   onChange={handleInputChange}
                   rows="3"
-                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                  disabled={submitted}
                 ></textarea>
               </div>
 
@@ -305,7 +365,8 @@ function Evaluation() {
                   value={formData.improvements}
                   onChange={handleInputChange}
                   rows="3"
-                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                  disabled={submitted}
                 ></textarea>
               </div>
 
@@ -318,20 +379,23 @@ function Evaluation() {
                   value={formData.additionalComments}
                   onChange={handleInputChange}
                   rows="3"
-                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  className="block w-full px-4 py-3 rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500"
+                  disabled={submitted}
                 ></textarea>
               </div>
             </div>
 
             {/* Submit Button */}
-            <div className="flex justify-end mt-8">
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-150 ease-in-out"
-              >
-                Submit Evaluation
-              </button>
-            </div>
+            {!submitted && (
+              <div className="flex justify-end mt-8">
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-150 ease-in-out font-medium"
+                >
+                  Submit Evaluation
+                </button>
+              </div>
+            )}
           </form>
         </div>
       </div>
@@ -339,4 +403,4 @@ function Evaluation() {
   );
 }
 
-export default Evaluation; 
+export default Evaluation;
