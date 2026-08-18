@@ -13,11 +13,26 @@ const apiV2 = axios.create({
   }
 });
 
-// Request interceptor to automatically attach Supabase JWT Bearer token
+// Request interceptor to automatically attach local JWT token or Supabase JWT Bearer token
 apiV2.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  let token = null;
+  if (process.env.NODE_ENV !== 'production') {
+    token = localStorage.getItem('local_jwt_token');
+  }
+  
+  if (!token) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        token = session.access_token;
+      }
+    } catch (e) {
+      console.warn('Failed to retrieve Supabase session:', e);
+    }
+  }
+  
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 }, (error) => {

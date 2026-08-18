@@ -20,24 +20,34 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await apiV2.get('/auth/me');
       const data = response.data;
-      setProfile(data.user || null);
-      setMemberships(data.memberships || []);
-      setRoles(data.roles || []);
-      setAssignments(data.assignments || []);
+      
+      const userObj = data.user || {};
+      const userMemberships = userObj.memberships || [];
+      const userRoles = Array.from(new Set(userMemberships.flatMap(m => m.roles || [])));
+
+      setProfile(userObj);
+      setMemberships(userMemberships);
+      setRoles(userRoles);
+      setAssignments(userObj.assignments || []);
       
       // Attempt to load active membership from localStorage or default to first
       const storedMembershipId = localStorage.getItem('active_membership_id');
-      const foundMembership = data.memberships?.find(m => m.id === storedMembershipId) || data.memberships?.[0] || null;
+      const foundMembership = userMemberships.find(m => m.membershipId === storedMembershipId) || userMemberships[0] || null;
       
       setActiveMembership(foundMembership);
-      setActiveTenant(foundMembership ? foundMembership.tenant : null);
+      setActiveTenant(foundMembership ? { id: foundMembership.tenantId, name: foundMembership.tenantName } : null);
       
       if (foundMembership) {
-        localStorage.setItem('active_membership_id', foundMembership.id);
+        localStorage.setItem('active_membership_id', foundMembership.membershipId);
       } else {
         localStorage.removeItem('active_membership_id');
       }
-      return data;
+      
+      return {
+        ...data,
+        memberships: userMemberships,
+        roles: userRoles
+      };
     } catch (error) {
       console.error('AuthContext: Failed to load user role contexts:', error);
       setProfile(null);
@@ -46,7 +56,7 @@ export const AuthProvider = ({ children }) => {
       setAssignments([]);
       setActiveMembership(null);
       setActiveTenant(null);
-      return { memberships: [], roles: [], assignments: [] };
+      throw error; // Propagate error so calling component (like LoginForm) gets the real error instead of silent redirect
     }
   }, []);
 
@@ -55,35 +65,57 @@ export const AuthProvider = ({ children }) => {
     let authSubscription;
 
     const initializeAuth = async () => {
-      const { data: { session: activeSession } } = await supabase.auth.getSession();
+      let activeSession = null;
+      let activeUser = null;
+
+      if (process.env.NODE_ENV !== 'production') {
+        const token = localStorage.getItem('local_jwt_token');
+        const storedUser = localStorage.getItem('local_jwt_user');
+        if (token && storedUser) {
+          activeSession = { access_token: token, user: JSON.parse(storedUser) };
+          activeUser = JSON.parse(storedUser);
+        }
+      }
+
+      if (!activeSession) {
+        try {
+          const { data: { session: supabaseSession } } = await supabase.auth.getSession();
+          activeSession = supabaseSession;
+          activeUser = supabaseSession?.user || null;
+        } catch (e) {
+          console.warn('Failed to retrieve Supabase session:', e);
+        }
+      }
+
       setSession(activeSession);
-      setUser(activeSession?.user || null);
+      setUser(activeUser);
       
-      if (activeSession?.user) {
+      if (activeUser) {
         await refreshContext();
       }
       
       setLoading(false);
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-        setSession(currentSession);
-        setUser(currentSession?.user || null);
-        
-        if (event === 'SIGNED_IN' && currentSession?.user) {
-          setLoading(true);
-          await refreshContext();
-          setLoading(false);
-        } else if (event === 'SIGNED_OUT') {
-          setMemberships([]);
-          setRoles([]);
-          setAssignments([]);
-          setActiveMembership(null);
-          setActiveTenant(null);
-          localStorage.removeItem('active_membership_id');
-        }
-      });
-
-      authSubscription = subscription;
+      if (activeSession && !localStorage.getItem('local_jwt_token')) {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+          setSession(currentSession);
+          setUser(currentSession?.user || null);
+          
+          if (event === 'SIGNED_IN' && currentSession?.user) {
+            setLoading(true);
+            await refreshContext();
+            setLoading(false);
+          } else if (event === 'SIGNED_OUT') {
+            setMemberships([]);
+            setRoles([]);
+            setAssignments([]);
+            setActiveMembership(null);
+            setActiveTenant(null);
+            localStorage.removeItem('active_membership_id');
+          }
+        });
+        authSubscription = subscription;
+      }
     };
 
     initializeAuth();
@@ -97,6 +129,26 @@ export const AuthProvider = ({ children }) => {
 
   // Login handler
   const signIn = async (email, password) => {
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const response = await apiV2.post('/auth/dev-login', { email, password });
+        const { token, user: devUser } = response.data;
+        
+        localStorage.setItem('local_jwt_token', token);
+        localStorage.setItem('local_jwt_user', JSON.stringify(devUser));
+        
+        const devSession = { access_token: token, user: devUser };
+        setSession(devSession);
+        setUser(devUser);
+        
+        return devSession;
+      } catch (err) {
+        console.warn('[Local Auth dev-login failed, falling back to Supabase]:', err.response?.data?.message || err.message);
+        if (err.response?.status === 401) {
+          throw new Error(err.response.data.message || 'Invalid credentials.');
+        }
+      }
+    }
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
@@ -104,16 +156,32 @@ export const AuthProvider = ({ children }) => {
 
   // Logout handler
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    if (process.env.NODE_ENV !== 'production') {
+      localStorage.removeItem('local_jwt_token');
+      localStorage.removeItem('local_jwt_user');
+    }
+    setSession(null);
+    setUser(null);
+    setMemberships([]);
+    setRoles([]);
+    setAssignments([]);
+    setActiveMembership(null);
+    setActiveTenant(null);
+    localStorage.removeItem('active_membership_id');
+
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      // Ignore if offline
+    }
   };
 
   const selectTenant = (membershipId) => {
-    const found = memberships.find(m => m.id === membershipId);
+    const found = memberships.find(m => m.membershipId === membershipId);
     if (found) {
       setActiveMembership(found);
-      setActiveTenant(found.tenant);
-      localStorage.setItem('active_membership_id', found.id);
+      setActiveTenant({ id: found.tenantId, name: found.tenantName });
+      localStorage.setItem('active_membership_id', found.membershipId);
     }
   };
 

@@ -15,6 +15,7 @@ const validateEnv = () => {
   const requiredInProduction = [
     'SUPABASE_URL',
     'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_ANON_KEY',
     'DATABASE_URL',
     'ALLOWED_ORIGINS'
   ];
