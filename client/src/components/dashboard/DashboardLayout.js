@@ -15,7 +15,6 @@ import {
   FaChalkboardTeacher,
   FaBuilding,
   FaEnvelope,
-  FaCog,
   FaCheckCircle,
   FaHourglassHalf,
   FaSitemap
@@ -57,8 +56,21 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
     }
   }
 
-  const userName = profile ? `${profile.first_name} ${profile.last_name}` : 'User';
+  const firstName = profile?.firstName || profile?.first_name;
+  const lastName = profile?.lastName || profile?.last_name;
+  const userName = (firstName && lastName) ? `${firstName} ${lastName}` : (firstName || lastName || 'User');
   const tenantName = activeTenant?.name || 'Nowrosjee Wadia College';
+
+  const getRoleBadgeLabel = (role) => {
+    switch (role) {
+      case 'ADMIN': return 'Administrator';
+      case 'STUDENT': return 'Student';
+      case 'FACULTY_MENTOR': return 'Faculty Mentor';
+      case 'MENTOR':
+      case 'COMPANY_MENTOR': return 'Company Mentor';
+      default: return role ? role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+    }
+  };
 
   // Navigation Items for Admin Role
   const adminNavSections = [
@@ -94,8 +106,7 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
     {
       title: 'Communication',
       items: [
-        { id: 'mentor-invitations', label: 'Mentor Invitations', icon: FaEnvelope },
-        { id: 'settings', label: 'Settings', icon: FaCog }
+        { id: 'mentor-invitations', label: 'Mentor Invitations', icon: FaEnvelope }
       ]
     }
   ];
@@ -104,7 +115,7 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
     { path: '/dashboard', icon: FaHome, label: 'Overview' },
     { path: '/dashboard/daily-logs', icon: FaClipboardList, label: 'Daily Logs' },
     { path: '/dashboard/weekly-reports', icon: FaFileAlt, label: 'Weekly Reports' },
-    { path: '/dashboard/evaluation', icon: FaStar, label: 'Agency Evaluation' }
+    { path: '/dashboard/evaluation', icon: FaStar, label: 'Internship Evaluation' }
   ];
 
   const facultyMenuItems = [
@@ -180,7 +191,7 @@ function DashboardLayout({ children, userRole, activeTab, onTabChange }) {
                   <p className="text-sm font-semibold text-gray-900 truncate">{userName}</p>
                   <p className="text-xs text-gray-500 truncate mt-0.5">{profile?.email}</p>
                   <span className="inline-block mt-1.5 px-2 py-0.5 text-xs font-semibold bg-blue-50 text-blue-700 rounded-full">
-                    {resolvedRole.replace('_', ' ')}
+                    {getRoleBadgeLabel(resolvedRole)}
                   </span>
                 </div>
                 <button

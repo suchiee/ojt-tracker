@@ -90,7 +90,7 @@ function StudentProfile() {
               <div className="flex items-center">
                 <FaBuilding className="text-blue-600 mr-3" />
                 <div>
-                  <div className="text-sm text-gray-600">Training Agency</div>
+                  <div className="text-sm text-gray-600">Company</div>
                   <div className="font-medium">{profileData.trainingDetails.agency}</div>
                 </div>
               </div>

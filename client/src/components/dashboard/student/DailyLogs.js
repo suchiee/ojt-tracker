@@ -334,7 +334,7 @@ function DailyLogs() {
             </div>
             <h2 className="text-xl font-bold text-yellow-900 mb-2">Training Setup Pending Verification</h2>
             <p className="text-yellow-700 max-w-md mx-auto">
-              Your training agency and internship details have been submitted and are currently awaiting administrator verification. 
+              Your company and internship details have been submitted and are currently awaiting administrator verification. 
               You will be able to create daily logs and log your work hours once the setup is approved.
             </p>
           </div>

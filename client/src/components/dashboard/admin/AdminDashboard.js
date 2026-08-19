@@ -270,13 +270,13 @@ function AdminDashboard() {
         tenant_id: activeTenantId,
         batch_id: facBatchId || null
       });
-      setSuccessMsg(`Invitation sent to Faculty Advisor "${facFirstName} ${facLastName}".`);
+      setSuccessMsg(`Invitation sent to Faculty Mentor "${facFirstName} ${facLastName}".`);
       setShowFacultyModal(false);
       setFacEmail(''); setFacFirstName(''); setFacLastName(''); setFacBatchId('');
       fetchFaculty();
       fetchOverview();
     } catch (err) {
-      setErrorMsg(err.response?.data?.message || 'Failed to invite faculty advisor.');
+      setErrorMsg(err.response?.data?.message || 'Failed to invite faculty mentor.');
     } finally {
       setSubmittingModal(false);
     }
@@ -288,7 +288,7 @@ function AdminDashboard() {
     setErrorMsg('');
     try {
       await assignFacultyToBatch(assignBatchId, assignFacultyId);
-      setSuccessMsg('Faculty Advisor assigned to Batch successfully.');
+      setSuccessMsg('Faculty Mentor assigned to Batch successfully.');
       setShowAssignFacultyModal(false);
       fetchFaculty();
     } catch (err) {
@@ -302,7 +302,7 @@ function AdminDashboard() {
   const handleConfirmApproval = async (e) => {
     e.preventDefault();
     if (!approvalFacultyId) {
-      setErrorMsg('Please select a Faculty Advisor to approve and activate the internship.');
+      setErrorMsg('Please select a Faculty Mentor to approve and activate the internship.');
       return;
     }
     setSubmittingModal(true);
@@ -394,7 +394,7 @@ function AdminDashboard() {
   // Time of day greeting
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 18 ? 'Good Afternoon' : 'Good Evening';
-  const adminName = profile ? profile.first_name : 'Administrator';
+  const adminName = profile ? (profile.firstName || profile.first_name || 'Administrator') : 'Administrator';
 
   // Extract flat batch options for selects
   const batchOptions = [];
@@ -583,7 +583,7 @@ function AdminDashboard() {
                   <FaChevronRight className="h-3 w-3 text-gray-400 group-hover:text-emerald-600 transition" />
                 </div>
                 <h4 className="mt-2 text-base font-bold text-gray-900">Students Waiting for Faculty Assignment</h4>
-                <p className="mt-1 text-xs text-gray-600">Ensure all batches have assigned Faculty Advisors</p>
+                <p className="mt-1 text-xs text-gray-600">Ensure all batches have assigned Faculty Mentors</p>
               </button>
 
               <button
@@ -821,7 +821,7 @@ function AdminDashboard() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Faculty Management</h1>
-              <p className="text-xs text-gray-500">Manage institutional Faculty Advisors and Batch Assignments</p>
+              <p className="text-xs text-gray-500">Manage institutional Faculty Mentors and Batch Assignments</p>
             </div>
             <div className="flex space-x-2">
               <button
@@ -841,15 +841,15 @@ function AdminDashboard() {
 
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             {facultyLoading ? (
-              <div className="py-12 text-center text-sm text-gray-500">Loading faculty advisors...</div>
+              <div className="py-12 text-center text-sm text-gray-500">Loading faculty mentors...</div>
             ) : facultyList.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-500">No faculty advisors provisioned yet.</div>
+              <div className="py-12 text-center text-sm text-gray-500">No faculty mentors provisioned yet.</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      <th className="py-3.5 px-4">Faculty Advisor</th>
+                      <th className="py-3.5 px-4">Faculty Mentor</th>
                       <th className="py-3.5 px-4">Email</th>
                       <th className="py-3.5 px-4">Assigned Batches</th>
                       <th className="py-3.5 px-4 text-right">Actions</th>
@@ -1025,7 +1025,7 @@ function AdminDashboard() {
         <div className="space-y-6">
           <div>
             <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">Completed Internships</h1>
-            <p className="text-xs text-gray-500">Archive of completed student OJT requirements</p>
+            <p className="text-xs text-gray-500">Archive of completed student internship requirements</p>
           </div>
           <div className="p-8 bg-white rounded-2xl border border-gray-200 text-center text-gray-500 text-sm">
             No completed internships recorded in archive yet.
@@ -1149,10 +1149,14 @@ function AdminDashboard() {
               </div>
             </div>
 
-            {/* Faculty Advisor */}
+            {/* Faculty Mentor */}
             <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-              <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1">Assigned Faculty Advisor</h4>
-              <p className="text-sm font-semibold text-gray-900">Dr. Meera Kulkarni (meera.kulkarni.demo@internsync.app)</p>
+              <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1">Assigned Faculty Mentor</h4>
+              <p className="text-sm text-gray-700">
+                {selectedStudentDetail.faculty_mentor
+                  ? `${selectedStudentDetail.faculty_mentor.first_name} ${selectedStudentDetail.faculty_mentor.last_name} (${selectedStudentDetail.faculty_mentor.email})`
+                  : 'No faculty mentor assigned yet.'}
+              </p>
             </div>
 
             {/* Internship Details */}
@@ -1163,7 +1167,7 @@ function AdminDashboard() {
                   <div key={int.id} className="text-sm space-y-1">
                     <p><strong>Company:</strong> {int.company_name}</p>
                     <p><strong>Role:</strong> {int.job_role}</p>
-                    <p><strong>Mentor:</strong> Rahul Deshpande (rahul.deshpande.demo@internsync.app)</p>
+                    <p><strong>Company Mentor:</strong> {int.mentor_name || int.mentor_email || 'Not yet assigned'}</p>
                     <p><strong>Status:</strong> <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-xs font-bold">{int.status}</span></p>
                     <p><strong>Hours Progress:</strong> {int.approved_hours} / {int.required_hours} hrs</p>
                   </div>
@@ -1221,14 +1225,14 @@ function AdminDashboard() {
 
             <form onSubmit={handleConfirmApproval} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Select Faculty Advisor *</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Select Faculty Mentor *</label>
                 <select
                   required
                   value={approvalFacultyId}
                   onChange={(e) => setApprovalFacultyId(e.target.value)}
                   className="w-full px-3 py-2 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">[ Select Faculty Advisor ]</option>
+                  <option value="">[ Select Faculty Mentor ]</option>
                   {facultyList
                     .filter((fac) => {
                       const studentBatchId = approvalModalItem?.student?.batch_id;
@@ -1246,7 +1250,7 @@ function AdminDashboard() {
                     (fac.assigned_batches || []).some((b) => b.batch_id === approvalModalItem.student.batch_id)
                   ).length === 0 && (
                     <p className="mt-1 text-xs text-amber-600">
-                      Note: No Faculty Advisor is currently assigned to this student's batch. Please assign a Faculty Advisor to the batch in Faculty Management first.
+                      Note: No Faculty Mentor is currently assigned to this student's batch. Please assign a Faculty Mentor to the batch in Faculty Management first.
                     </p>
                   )}
               </div>
@@ -1401,7 +1405,7 @@ function AdminDashboard() {
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Invite Faculty Advisor</h3>
+              <h3 className="text-lg font-bold text-gray-900">Invite Faculty Mentor</h3>
               <button onClick={() => setShowFacultyModal(false)} className="text-gray-400 hover:text-gray-700"><FaTimes /></button>
             </div>
             <form onSubmit={handleProvisionFaculty} className="space-y-4">
@@ -1451,9 +1455,9 @@ function AdminDashboard() {
             </div>
             <form onSubmit={handleAssignFaculty} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Faculty Advisor</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Faculty Mentor</label>
                 <select required value={assignFacultyId} onChange={e => setAssignFacultyId(e.target.value)} className="w-full px-3 py-2 border rounded-xl text-sm">
-                  <option value="">Select Faculty Advisor</option>
+                  <option value="">Select Faculty Mentor</option>
                   {facultyList.map(f => (
                     <option key={f.id} value={f.id}>{f.first_name} {f.last_name} ({f.email})</option>
                   ))}

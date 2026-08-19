@@ -56,7 +56,7 @@ function TrainingSetup({ onSubmit }) {
   return (
     <div className="bg-white p-6 rounded-lg shadow-lg max-w-2xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-800 mb-2">Training Setup</h2>
-      <p className="text-gray-600 mb-6">Please complete your OJT training details to get started</p>
+      <p className="text-gray-600 mb-6">Please complete your internship details to get started</p>
       
       {error && (
         <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
@@ -65,10 +65,10 @@ function TrainingSetup({ onSubmit }) {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Training Agency */}
+        {/* Company */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Training Agency
+            Company
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -77,7 +77,7 @@ function TrainingSetup({ onSubmit }) {
             <input
               type="text"
               className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter your training agency name"
+              placeholder="Enter your company name"
               value={agency}
               onChange={(e) => setAgency(e.target.value)}
               required
@@ -205,7 +205,7 @@ function TrainingSetup({ onSubmit }) {
               required
             />
           </div>
-          <p className="mt-1 text-sm text-gray-500">This will be used to calculate your OJT progress</p>
+          <p className="mt-1 text-sm text-gray-500">This will be used to calculate your internship progress</p>
         </div>
 
         <button

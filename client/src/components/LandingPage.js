@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import LoginForm from './auth/LoginForm';
-import { FaClock, FaChartLine, FaSearch, FaFileExport, FaShieldAlt } from 'react-icons/fa';
+import { FaClock, FaChartLine, FaUserCheck, FaShieldAlt } from 'react-icons/fa';
 
 function LandingPage() {
   const [showRoleSelection, setShowRoleSelection] = useState(false);
@@ -58,16 +58,15 @@ function LandingPage() {
                 onClick={() => handleRoleSelect('student')}
               >
                 <h3 className="text-lg font-semibold text-blue-600">Student</h3>
-                <p className="text-gray-600 text-sm">Track your OJT hours and submit reports</p>
+                <p className="text-gray-600 text-sm">Track your internship hours and submit reports</p>
               </button>
-              
               
               <button 
                 className="w-full p-4 text-left bg-white border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
                 onClick={() => handleRoleSelect('admin')}
               >
                 <h3 className="text-lg font-semibold text-blue-600">Administrator</h3>
-                <p className="text-gray-600 text-sm">Oversee the entire OJT program</p>
+                <p className="text-gray-600 text-sm">Oversee the entire internship program</p>
               </button>
             </div>
             <button 
@@ -81,8 +80,9 @@ function LandingPage() {
           <div className="text-center">
             <h3 className="text-xl font-bold text-gray-900 mb-4">Invitation-Only Access</h3>
             <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-              Account registration is now managed exclusively via administration email invites.
-              If you have received an invitation code, please accept the invite link sent to your email to configure your account.
+              Access to InternSync is managed exclusively through institutional invitations.
+              If you have received an invitation, please use the link sent to your email to activate your account.
+              Contact your administrator if you have not received an invite.
             </p>
             <button
               className="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-150 ease-in-out font-medium"
@@ -102,9 +102,11 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <div className="text-2xl font-extrabold tracking-tight">
-                <span className="text-gray-900">OJT</span>
-                <span className="text-blue-600">Tracker</span>
+              <div className="flex items-center space-x-2">
+                <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm shadow-sm">
+                  IS
+                </div>
+                <span className="text-xl font-extrabold tracking-tight text-gray-900">InternSync</span>
               </div>
             </div>
             <div className="flex items-center space-x-4">
@@ -133,13 +135,13 @@ function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
           <div className="text-center">
             <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">
-              Modern OJT Management Platform
+              Internship Management Platform
             </div>
             <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl md:text-6xl">
-              Track, Report, and Succeed in Your OJT
+              Track, Review, and Complete Internships
             </h1>
             <p className="mt-6 max-w-2xl mx-auto text-lg text-gray-600">
-              Manage hours, submit logs, and monitor progress with a streamlined experience for students and administrators.
+              Manage hours, submit logs, and monitor progress with a streamlined experience for students, mentors, and administrators.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
               <button 
@@ -164,7 +166,7 @@ function LandingPage() {
             </div>
             <div className="bg-white rounded-xl border border-gray-100 p-6 text-center">
               <div className="text-3xl font-bold text-gray-900">150+</div>
-              <div className="mt-1 text-sm text-gray-600">Agencies onboarded</div>
+              <div className="mt-1 text-sm text-gray-600">Companies onboarded</div>
             </div>
             <div className="bg-white rounded-xl border border-gray-100 p-6 text-center">
               <div className="text-3xl font-bold text-gray-900">25k+</div>
@@ -185,36 +187,36 @@ function LandingPage() {
             <div className="flex items-center justify-center h-16 w-16 bg-blue-100 text-blue-600 rounded-full mb-6 mx-auto">
               <FaClock className="h-8 w-8" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Hour Tracking</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Daily Log Tracking</h3>
             <p className="text-gray-600 text-center">
-              Log and monitor OJT hours with real-time updates and clear summaries.
+              Log and monitor internship hours with real-time updates and clear daily summaries.
             </p>
           </div>
           <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition">
             <div className="flex items-center justify-center h-16 w-16 bg-blue-100 text-blue-600 rounded-full mb-6 mx-auto">
               <FaChartLine className="h-8 w-8" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Progress Reports</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Weekly Progress Reports</h3>
             <p className="text-gray-600 text-center">
-              Submit and review progress reports with streamlined workflows and history.
+              Submit and review weekly reports with mentor approval workflows and version history.
             </p>
           </div>
           <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition">
             <div className="flex items-center justify-center h-16 w-16 bg-blue-100 text-blue-600 rounded-full mb-6 mx-auto">
-              <FaSearch className="h-8 w-8" />
+              <FaUserCheck className="h-8 w-8" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Global Search</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Mentor Review Workflows</h3>
             <p className="text-gray-600 text-center">
-              Find students, mentors, agencies, and logs with powerful search tools.
+              Company mentors and faculty mentors each have dedicated review queues and approval flows.
             </p>
           </div>
           <div className="p-8 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition">
             <div className="flex items-center justify-center h-16 w-16 bg-blue-100 text-blue-600 rounded-full mb-6 mx-auto">
-              <FaFileExport className="h-8 w-8" />
+              <FaShieldAlt className="h-8 w-8" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Export & Analytics</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 text-center">Role-Based Access</h3>
             <p className="text-gray-600 text-center">
-              Export filtered data and gain insights with built-in analytics views.
+              Secure, invitation-based onboarding for students, faculty mentors, company mentors, and admins.
             </p>
           </div>
         </div>
@@ -229,23 +231,23 @@ function LandingPage() {
                 <div className="h-10 w-10 rounded-full bg-blue-100"></div>
                 <div>
                   <div className="font-semibold text-gray-900">Student</div>
-                  <div className="text-sm text-gray-600">BCA, 3rd Year</div>
+                  <div className="text-sm text-gray-600">M.Sc. Computer Science</div>
                 </div>
               </div>
               <p className="mt-4 text-gray-700">
-                The tracker made logging hours seamless and kept my reports organized.
+                InternSync made logging hours seamless and kept my reports organized throughout the internship.
               </p>
             </div>
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center space-x-3">
                 <div className="h-10 w-10 rounded-full bg-blue-100"></div>
                 <div>
-                  <div className="font-semibold text-gray-900">Agency Mentor</div>
+                  <div className="font-semibold text-gray-900">Company Mentor</div>
                   <div className="text-sm text-gray-600">Tech Firm</div>
                 </div>
               </div>
               <p className="mt-4 text-gray-700">
-                Reviewing logs and progress was quick and clear for each intern.
+                Reviewing logs and progress was quick and clear for each intern assigned to me.
               </p>
             </div>
             <div className="bg-white rounded-xl border border-gray-100 p-6">
@@ -253,11 +255,11 @@ function LandingPage() {
                 <div className="h-10 w-10 rounded-full bg-blue-100"></div>
                 <div>
                   <div className="font-semibold text-gray-900">Administrator</div>
-                  <div className="text-sm text-gray-600">College Coordinator</div>
+                  <div className="text-sm text-gray-600">College</div>
                 </div>
               </div>
               <p className="mt-4 text-gray-700">
-                Saved views and exports helped manage batches and audits effortlessly.
+                Managing batches, approvals, and faculty assignments is effortless with the admin dashboard.
               </p>
             </div>
           </div>
@@ -271,9 +273,9 @@ function LandingPage() {
               <FaShieldAlt />
             </div>
           </div>
-          <h3 className="text-2xl md:text-3xl font-bold">Ready to streamline your OJT?</h3>
+          <h3 className="text-2xl md:text-3xl font-bold">Ready to manage your internship?</h3>
           <p className="mt-2 text-blue-100">
-            Start tracking and managing today with a platform built for students and administrators.
+            Start tracking and managing today with a platform built for students, mentors, and administrators.
           </p>
           <div className="mt-6 flex flex-col sm:flex-row gap-4 justify-center">
             <button 
@@ -296,9 +298,12 @@ function LandingPage() {
         <h2 className="text-3xl font-bold text-center text-gray-900 mb-12">Frequently Asked Questions</h2>
         <div className="max-w-3xl mx-auto space-y-4">
           {[
-            { q: 'How do students register?', a: 'Click Get Started and choose Student to open registration.' },
-            { q: 'Can administrators manage batches?', a: 'Use the admin dashboard with filters, saved views, and exports.' },
-            { q: 'Is my data secure?', a: 'We follow best practices for authentication and data handling.' }
+            {
+              q: 'How do I get access?',
+              a: 'Accounts are invitation-only. Students, faculty mentors, and company mentors receive access through their institution\'s onboarding process. Contact your administrator if you have not received an invitation.'
+            },
+            { q: 'Can administrators manage batches?', a: 'Yes. The admin dashboard provides full control over departments, programs, batches, student enrollment, faculty assignments, and internship approvals.' },
+            { q: 'Is my data secure?', a: 'Yes. InternSync uses Supabase authentication with row-level security, ensuring each user only accesses their own data.' }
           ].map((item, idx) => (
             <div key={idx} className="border border-gray-200 rounded-lg">
               <button
@@ -318,7 +323,12 @@ function LandingPage() {
       <footer className="border-t border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="text-gray-600">© {new Date().getFullYear()} OJT Tracker</div>
+            <div className="flex items-center space-x-2">
+              <div className="h-6 w-6 rounded bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+                IS
+              </div>
+              <span className="text-gray-600">© {new Date().getFullYear()} InternSync</span>
+            </div>
             <div className="flex items-center gap-6 text-sm">
               <button onClick={() => scrollToId('features')} className="text-gray-600 hover:text-gray-900">Features</button>
               <button onClick={() => scrollToId('faq')} className="text-gray-600 hover:text-gray-900">FAQ</button>
@@ -334,4 +344,4 @@ function LandingPage() {
   );
 }
 
-export default LandingPage; 
+export default LandingPage;

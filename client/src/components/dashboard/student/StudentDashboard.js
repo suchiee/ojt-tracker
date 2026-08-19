@@ -193,7 +193,7 @@ function StudentDashboard() {
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-sm">Agency</div>
+                <div className="text-sm">Company</div>
                 <div className="font-semibold">{trainingDetails.agencyName || 'Not specified'}</div>
               </div>
             </div>
@@ -248,7 +248,7 @@ function StudentDashboard() {
             <>
               {/* Progress Overview Card */}
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-4">OJT Progress Overview</h2>
+                <h2 className="text-xl font-semibold text-gray-800 mb-4">Internship Progress</h2>
                 {trainingDetails.status?.toUpperCase() === 'REJECTED' && trainingDetails.rejectionReason && (
                   <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm mb-6 shadow-inner">
                     <span className="font-bold text-red-950 block mb-1">⚠️ Training Setup Rejection Remarks:</span>
@@ -287,7 +287,7 @@ function StudentDashboard() {
                     <div className="flex items-center">
                       <FaBuilding className="text-blue-600 mr-3" />
                       <div>
-                        <div className="text-sm text-gray-600">Training Agency</div>
+                        <div className="text-sm text-gray-600">Company</div>
                         <div className="font-medium">{trainingDetails.agencyName || 'Not specified'}</div>
                       </div>
                     </div>

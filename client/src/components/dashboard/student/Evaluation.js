@@ -155,7 +155,7 @@ function Evaluation() {
             </div>
             <h2 className="text-xl font-bold text-yellow-900 mb-2">Training Setup Pending Verification</h2>
             <p className="text-yellow-700 max-w-md mx-auto">
-              Your training agency and internship details have been submitted and are currently awaiting administrator verification. 
+              Your company and internship details have been submitted and are currently awaiting administrator verification. 
               You will be able to submit evaluation forms once the setup is approved.
             </p>
           </div>
@@ -207,9 +207,9 @@ function Evaluation() {
     <DashboardLayout userRole="student">
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-xl shadow-lg p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Training Agency Evaluation</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Internship Evaluation</h2>
           <p className="text-gray-600 mb-6">
-            Please provide your honest feedback about your OJT experience. Your responses will help improve the program for future students.
+            Please provide your honest feedback about your internship experience. Your responses will help improve the program for future students.
           </p>
 
           {submitted && (
@@ -227,11 +227,11 @@ function Evaluation() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Agency Information */}
+            {/* Company Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Training Agency Name
+                  Company Name
                 </label>
                 <input
                   type="text"
@@ -245,7 +245,7 @@ function Evaluation() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supervisor Name
+                  Company Mentor Name
                 </label>
                 <input
                   type="text"
@@ -322,7 +322,7 @@ function Evaluation() {
 
                 <div className="grid grid-cols-1 md:grid-cols-6 items-center gap-4 py-3 border-b border-gray-200">
                   <div className="md:col-span-3">
-                    <p className="font-medium text-gray-800">Communication with the agency was clear and effective</p>
+                    <p className="font-medium text-gray-800">Communication with the company was clear and effective</p>
                   </div>
                   <div className="md:col-span-3">
                     <RatingStars category="communication" value={formData.ratings.communication} />
@@ -344,7 +344,7 @@ function Evaluation() {
             <div className="space-y-6 mt-8">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  What were the strengths of this training agency?
+                  What were the strengths of this company?
                 </label>
                 <textarea
                   name="strengths"

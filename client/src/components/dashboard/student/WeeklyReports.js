@@ -324,7 +324,7 @@ function WeeklyReports() {
             <div className="text-4xl mb-4 animate-pulse">⏳</div>
             <h2 className="text-xl font-bold text-yellow-900 mb-2">Training Setup Pending Verification</h2>
             <p className="text-yellow-700 max-w-md mx-auto">
-              Your training agency and internship details have been submitted and are currently awaiting administrator verification. 
+              Your company and internship details have been submitted and are currently awaiting administrator verification. 
               You will be able to compile weekly reports once the setup is approved.
             </p>
           </div>
@@ -722,7 +722,7 @@ function WeeklyReports() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Weekly Reports</h1>
-            <p className="text-sm text-gray-500 mt-1">Submit and track your weekly OJT progress reports</p>
+            <p className="text-sm text-gray-500 mt-1">Submit and track your weekly internship progress reports</p>
           </div>
           {isV2 && (
             <button onClick={openCreate}

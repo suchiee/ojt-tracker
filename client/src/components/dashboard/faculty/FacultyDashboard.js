@@ -462,12 +462,12 @@ function FacultyDashboard() {
 
   // ── Main Dashboard View with Tab Navigation ───────────────────────────────
   return (
-    <DashboardLayout userRole="coordinator">
+    <DashboardLayout userRole="faculty_mentor">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header and Navigation Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Faculty Advisor Dashboard</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Faculty Mentor Dashboard</h1>
             <p className="text-sm text-gray-500 mt-1">
               Supervise student cohorts, monitor internship progress, and review weekly reports
             </p>

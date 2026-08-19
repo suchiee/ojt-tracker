@@ -54,6 +54,12 @@ function StudentOnboarding() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="flex items-center justify-center space-x-2 mb-4">
+          <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm shadow-sm">
+            IS
+          </div>
+          <span className="text-xl font-extrabold tracking-tight text-gray-900">InternSync</span>
+        </div>
         <h2 className="text-center text-3xl font-extrabold text-gray-900">
           Student Onboarding
         </h2>
@@ -83,7 +89,7 @@ function StudentOnboarding() {
                 <input
                   type="text"
                   required
-                  placeholder="Enter the code provided by your coordinator"
+                  placeholder="Enter the code provided by your administrator"
                   value={invitationCode}
                   onChange={(e) => setInvitationCode(e.target.value)}
                   className="block w-full px-4 py-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition duration-150 ease-in-out"

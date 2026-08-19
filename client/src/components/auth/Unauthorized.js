@@ -8,7 +8,7 @@ function Unauthorized() {
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 text-center">
           <h2 className="text-3xl font-extrabold text-red-600 mb-4">Unauthorized Access</h2>
           <p className="text-gray-600 mb-6">
-            You do not have the required permissions to access this page. Please contact your coordinator if you believe this is an error.
+            You do not have the required permissions to access this page. Please contact your administrator if you believe this is an error.
           </p>
           <div className="mt-6">
             <Link

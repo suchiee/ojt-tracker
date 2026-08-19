@@ -25,6 +25,11 @@ export const AuthProvider = ({ children }) => {
       const userMemberships = userObj.memberships || [];
       const userRoles = Array.from(new Set(userMemberships.flatMap(m => m.roles || [])));
 
+      if (userObj.firstName && !userObj.first_name) userObj.first_name = userObj.firstName;
+      if (userObj.lastName && !userObj.last_name) userObj.last_name = userObj.lastName;
+      if (userObj.first_name && !userObj.firstName) userObj.firstName = userObj.first_name;
+      if (userObj.last_name && !userObj.lastName) userObj.lastName = userObj.last_name;
+
       setProfile(userObj);
       setMemberships(userMemberships);
       setRoles(userRoles);

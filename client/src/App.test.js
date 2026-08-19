@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders OJT Tracker landing page', () => {
+test('renders InternSync landing page', () => {
   render(<App />);
-  const textElement = screen.getByText(/Track, Report, and Succeed/i);
+  const textElement = screen.getByText(/Track, Review, and Complete/i);
   expect(textElement).toBeInTheDocument();
 });

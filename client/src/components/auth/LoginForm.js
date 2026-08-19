@@ -42,6 +42,9 @@ function LoginForm({ onClose }) {
       } else if (roles.includes('FACULTY_MENTOR')) {
         console.log('[LOGIN ROUTING] FACULTY_MENTOR role detected -> /faculty/dashboard');
         navigate('/faculty/dashboard');
+      } else if (roles.includes('COMPANY_MENTOR')) {
+        console.log('[LOGIN ROUTING] COMPANY_MENTOR role detected -> /mentor/dashboard');
+        navigate('/mentor/dashboard');
       } else if (roles.includes('STUDENT')) {
         // If they have explicit company mentor assignments, route to mentor dashboard
         if (assignments.length > 0) {
@@ -66,7 +69,14 @@ function LoginForm({ onClose }) {
 
   return (
     <div className="bg-white p-8 rounded-lg shadow-xl max-w-xl w-full">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Login</h2>
+      {/* InternSync Brand */}
+      <div className="flex items-center justify-center space-x-2 mb-5">
+        <div className="h-8 w-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-extrabold text-sm shadow-sm">
+          IS
+        </div>
+        <span className="text-xl font-extrabold tracking-tight text-gray-900">InternSync</span>
+      </div>
+      <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Sign In</h2>
       
       {error && (
         <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm">
